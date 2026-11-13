@@ -1,0 +1,132 @@
+# iOS Build (EXPERIMENTAL)
+
+> **Status: experimental and untested by the maintainer** (no iOS device available).
+> The build pipeline is sound, it mirrors how
+> [balatro-mobile-maker](https://github.com/blake502/balatro-mobile-maker) builds
+> its iOS package, but layout, safe-area/notch behavior, and performance on real
+> devices have not been verified. If you try it, **please
+> [open an issue](https://github.com/LoreanXavier/balatro-portrait-mobile/issues)**
+> with your device model and screenshots, working or not. We'll help you debug.
+
+## How it works
+
+There is no Xcode and no macOS involved. The build:
+
+1. Downloads a prebuilt, unsigned LÖVE iOS app shell with lovely-injector
+   linked into it (`base.ipa` from
+   [Lovely Mobile Maker](https://lmm.shorty.systems/), contains **no game
+   data**). `--ios-vanilla` uses the plain shell instead
+   (`balatro-base.ipa` from [balatro-apk-maker](https://github.com/blake502/balatro-apk-maker)'s
+   Additional Tools, SHA-256 verified), which is what every build before
+   v2.7.7 used
+2. Inserts your locally built `Game.love` (made from **your** copy of Balatro)
+   into `Payload/Balatro.app/`
+3. Locks `Info.plist` to portrait orientation, stamps the mod version and
+   opts the app into the panel's full refresh rate
+4. Writes `balatro-portrait.ipa`
+
+Since v2.7.6 the window also asks for the screen's native scale. Without it
+iOS handed LOVE a drawable the size of the window in points and stretched it
+over the panel, so an iPhone 13 Pro drew the whole game at 390x844 and blew it
+up to 1170x2532 (#45). Android was never affected: it takes its scale from the
+display density instead of that flag.
+
+The IPA is **unsigned by design**. Sideloading tools re-sign it with your own
+Apple ID at install time.
+
+The default vanilla shell uses bundle ID `org.htf65jud.balatro`. It is different
+from the uploaded Balatro+ source IPA's `com.playstack.balatroarcade`, so the
+portrait build installs as a separate app rather than replacing that source app.
+
+## Building
+
+```
+python build.py --ios
+```
+
+Or answer **yes** to "Build iOS .ipa?" during the interactive build.
+The output is `balatro-portrait.ipa` in the project root.
+
+### Mods
+
+Since v2.7.7 the IPA is built on a shell that has lovely-injector in it, so
+Steamodded loads the same way it does on Android. Earlier builds used a plain
+LÖVE shell with no mod loader, which is why mods could not be made to work with
+them (#45).
+
+Put mods where the
+[Steamodded mobile guide](https://docs.smods.dev/Installation/Installing%20Steamodded%20mobile/)
+says: open the **Files** app, go to **On My iPhone → Balatro → game → Mods**
+and drop `smods` in there. The bundle id is unchanged, so this installs over an
+earlier build and keeps its saves.
+
+Portrait keeps the vanilla lines that Steamodded's patches anchor on, which is
+what makes the two work together on Android; the same source is what goes into
+the IPA. None of this is tested on a device by the maintainer, so report back.
+Use `--ios-vanilla` for the old plain shell.
+
+## Sideloading
+
+You need a free Apple ID. Two common options:
+
+### Sideloadly (Windows/macOS)
+
+1. Install [Sideloadly](https://sideloadly.io/)
+2. Connect your iPhone/iPad via USB
+3. Drag `balatro-portrait.ipa` into Sideloadly
+4. Enter your Apple ID and press **Start**
+5. On the device: **Settings → General → VPN & Device Management** → trust your
+   developer certificate
+
+### AltStore (Windows/macOS)
+
+1. Install [AltServer](https://altstore.io/) on your computer and AltStore on
+   your device
+2. Open the IPA with AltStore (**My Apps → + → balatro-portrait.ipa**)
+
+### The 7-day limit
+
+With a free Apple ID, sideloaded apps expire after **7 days** and must be
+re-signed (re-install via Sideloadly, or let AltStore auto-refresh in the
+background). A paid Apple Developer account extends this to a year. Your save
+data survives re-signing as long as you don't delete the app.
+
+## Known unknowns (testers wanted)
+
+- **Notch/Dynamic Island overlap**, the top inset is read from the device at
+  runtime since v2.6.4; `safe_area_extra_ios` in `src/portrait_config.lua` adds
+  extra gap if the HUD still hugs the island
+- **Home indicator**, the bottom inset is read at runtime since v2.7.0 so the
+  title-screen buttons clear the swipe bar; `safe_area_bottom_extra_ios` in
+  `src/portrait_config.lua` adds extra gap. If something still looks off,
+  attach the **Options -> Diagnostics** report to your issue
+- **Rounded display corners**, iOS leaves these out of the safe area it
+  reports, so since v2.7.6 the two title-screen corner buttons step up and in
+  on any device with a home indicator (`corner_lift_ios` and
+  `corner_inset_ios` under `main_menu` in `src/portrait_config.lua`)
+- **High refresh rate**, still open. The IPA carries
+  `CADisableMinimumFrameDurationOnPhone` since v2.7.6, which is the key iOS
+  documents for going past 60 Hz, but the one ProMotion report so far (#45)
+  still reads 60 on the lovely shell and "feels like 60" on the plain one.
+  Since v2.7.8 the **Options -> Diagnostics** report shows the refresh rate the
+  app is told the panel has and the cap the frame loop is using; if you have a
+  120 Hz iPhone, that report is what settles it
+- **Haptics**, `love.system.vibrate` support varies on iOS; worst case it's a
+  silent no-op
+- **Performance**, the CRT shader may behave differently on Apple GPUs; if you
+  see artifacts, rebuild with `--disable-crt`
+
+## Troubleshooting
+
+### "Unable to install" / signing errors
+Free Apple IDs are limited to 3 sideloaded apps and ~10 app IDs per week.
+Remove an old app or wait, then retry.
+
+### Game opens in landscape or letterboxed
+This shouldn't happen (orientation is locked in `Info.plist`), if it does,
+open an issue with a screenshot; that's exactly the feedback we need.
+
+### Game crashes on launch
+Re-run `python build.py --ios --force` to rule out a stale `Game.love`, and
+check that the first-run resource extraction completed (`src/resources/` must
+exist). If it still crashes, open an issue with your device and iOS version.

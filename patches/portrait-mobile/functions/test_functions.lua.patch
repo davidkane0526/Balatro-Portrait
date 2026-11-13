@@ -1,0 +1,9 @@
+--- a/functions/test_functions.lua
++++ b/functions/test_functions.lua
+@@ -1,5 +1,5 @@
+ function live_test()
+-    notify_alert('b_challenge', "Back")
++
+ end 
+ 
+ function do_action(action)

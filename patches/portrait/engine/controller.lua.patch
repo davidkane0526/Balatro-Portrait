@@ -1,0 +1,225 @@
+--- a/engine/controller.lua
++++ b/engine/controller.lua
+@@ -19,6 +19,7 @@
+ self.cursor_hover = {T = {x=0, y=0}, target = nil, time = 0, handled = true}
+ self.cursor_collider = nil --The node that collides with the cursor this frame
+ self.cursor_position = {x=0,y=0} --NOT IN GAME UNITS
++self.touch_position = {x=0, y=0, active=false, seen=false}
+ 
+ --For key presses, hold times, and if they are released directly from LOVE
+ self.pressed_keys = {}
+@@ -78,6 +79,23 @@
+     axis_cursor = false,
+ }
+ 
++--Mobile: start in touch mode with the cursor parked offscreen. The default
++--mouse mode reads love.mouse.getPosition() before any touch has happened,
++--which reports a phantom position on Android and hover-selects whatever
++--card sits under it on launch (e.g. a shop joker with its tooltip open).
++--set_cursor_position only moves the cursor after a real touch is seen.
++if love.system.getOS() == 'Android' or love.system.getOS() == 'iOS' then
++    self.HID.mouse = false
++    self.HID.touch = true
++    self.HID.last_type = 'touch'
++    --Just offscreen, not far: the room-shake parallax leans the ROOM toward
++    --the cursor, so an extreme park position (e.g. -9999) visibly shifted the
++    --whole splash/menu left until the first touch. -100 keeps hover impossible
++    --while the parallax error stays imperceptible (~0.03 units).
++    self.cursor_position.x = -100
++    self.cursor_position.y = -100
++end
++
+ --The gamepad most recently used, if any
+ self.GAMEPAD = {object = nil, mapping = nil, name = nil}
+ self.GAMEPAD_CONSOLE = '' --Valid button icons for Xbox, Playstation and Nintendo controllers
+@@ -173,8 +191,13 @@
+             self.focused.target= nil
+         end
+ 
+-        --Set the position of the cursor to the love position of the mouse, derive cursor transform from that
+-        self.cursor_position.x, self.cursor_position.y = love.mouse.getPosition()
++        -- Android touch can report a stale mouse position on some launches, so keep touch coordinates event-driven.
++        if self.HID.touch and self.touch_position and self.touch_position.seen then
++            self.cursor_position.x = self.touch_position.x
++            self.cursor_position.y = self.touch_position.y
++        elseif self.HID.mouse then
++            self.cursor_position.x, self.cursor_position.y = love.mouse.getPosition()
++        end
+         G.CURSOR.T.x = self.cursor_position.x/(G.TILESCALE*G.TILESIZE)
+         G.CURSOR.T.y = self.cursor_position.y/(G.TILESCALE*G.TILESIZE)
+         G.CURSOR.VT.x = G.CURSOR.T.x
+@@ -185,6 +208,8 @@
+ --Called every game logic update frame
+ function Controller:update(dt)
+ 
++    portrait_watch_text_input()
++
+     --parse all locks and set
+     self.locked = false
+     if G.screenwipe then self.locks.wipe = true else self.locks.wipe = false end
+@@ -203,6 +228,10 @@
+             blocking = false,
+             blockable = false,
+             no_delete = true,
++            -- Runs while the game is paused too: a screen that pauses within
++            -- this tenth of a second (Cryptid's intro, right on the title)
++            -- otherwise kept the lock for good, and no tap got through.
++            pause_force = true,
+             func = (function()
+                 self.locks.frame = nil
+                 return true
+@@ -325,6 +354,7 @@
+             self.dragging.target = self.cursor_down.target
+             self.dragging.handled = false
+         end
++        self:portrait_press_closes_description()
+         self.cursor_down.handled = true
+     end
+ 
+@@ -351,6 +381,7 @@
+                 end
+             end
+         end
++        self:portrait_release_keeps_description()
+         self.cursor_up.handled = true
+     end
+ 
+@@ -364,6 +395,7 @@
+         self.hovering.target.states.hover.is = false
+         self.hovering.target = nil
+     end
++    self:portrait_hold_description_open()
+ 
+     --------------------------------------------------------------------
+     -- Sending all input updates to the game objects
+@@ -371,6 +403,7 @@
+     --The clicked object
+     if not self.clicked.handled then
+         self.clicked.target:click()
++        self:portrait_tap_toggles_description()
+         self.clicked.handled = true
+     end
+ 
+@@ -425,6 +458,70 @@
+     end
+ end
+ 
++-- A tap on a card outside the hand leaves its description open, with the finger off
++-- it. In the hand a tap selects the card, and the description is for a held finger.
++local function portrait_keeps_description(self, node)
++    if not (G.F_PORTRAIT and G.SETTINGS.tap_descriptions and self.HID.touch and node and node.is and node:is(Card)) then return false end
++    local kind = node.area and node.area.config and node.area.config.type
++    return kind and kind ~= 'hand' and kind ~= 'deck' and kind ~= 'discard'
++end
++
++-- One left open is there to be touched: a press on it closes it, and doesn't reach a
++-- button it hides (Next Round, in the shop).
++function Controller:portrait_press_on_description()
++    local popup = self.portrait_open_card and self.portrait_open_card.children.h_popup
++    return popup and self.HID.touch and popup:collides_with_point(self.cursor_hover.T)
++end
++
++function Controller:portrait_press_closes_description()
++    if self.portrait_open_card and self.cursor_down.target ~= self.portrait_open_card then
++        self.portrait_open_card = nil
++    end
++end
++
++function Controller:portrait_release_keeps_description()
++    self.portrait_tapped_card = nil
++    if self.clicked.handled then
++        -- A drag or a held finger, not a tap.
++        self.portrait_open_card = nil
++    elseif portrait_keeps_description(self, self.clicked.target) then
++        -- Until the tap is settled, so that the description opening under this
++        -- press does not close for a frame and open again.
++        self.portrait_tapped_card = self.clicked.target
++    end
++end
++
++function Controller:portrait_tap_toggles_description()
++    local card = self.portrait_tapped_card
++    if not card then return end
++    self.portrait_tapped_card = nil
++    if card.area and card.area:can_highlight(card) then
++        -- Open while the card is up with its buttons.
++        self.portrait_open_card = card.highlighted and card or nil
++        self.portrait_open_while_up = card.highlighted
++    else
++        self.portrait_open_card = self.portrait_open_card ~= card and card or nil
++        self.portrait_open_while_up = false
++    end
++end
++
++function Controller:portrait_hold_description_open()
++    if not self.HID.touch then return end
++    local open = self.portrait_open_card
++    if open and (open.REMOVED or not open.area or open.facing ~= 'front'
++            or not (open.states.hover.can and open.states.visible)
++            or (not not open.created_on_pause) ~= (not not G.SETTINGS.paused)
++            or (self.portrait_open_while_up and not open.highlighted)) then
++        open = nil
++        self.portrait_open_card = nil
++    end
++    local card = self.portrait_tapped_card or open
++    if card and not self.is_cursor_down then
++        self.hovering.target = card
++        card.states.hover.is = true
++    end
++end
++
+ --Brute force remove all registries that no longer have valid nodes
+ function Controller:cull_registry()
+     for k, registry in pairs(self.button_registry) do
+@@ -773,6 +870,7 @@
+     if self.text_input_hook then
+         if key == "escape" then
+             self.text_input_hook = nil
++            set_mobile_text_input(false)
+         elseif key == "capslock" then
+             self.capslock = not self.capslock
+         else
+@@ -963,8 +1061,8 @@
+     end
+ 
+     if not G.DRAW_HASH[1] or
+-        cursor_trans.x-G.ROOM.T.x < -G.DRAW_HASH_BUFF or cursor_trans.x-G.ROOM.T.x > G.TILE_W + G.DRAW_HASH_BUFF or
+-        cursor_trans.y-G.ROOM.T.y < -G.DRAW_HASH_BUFF or cursor_trans.y-G.ROOM.T.y > G.TILE_H + G.DRAW_HASH_BUFF then
++        cursor_trans.x-G.ROOM.T.x < -G.DRAW_HASH_BUFF or cursor_trans.x-G.ROOM.T.x > G.ROOM.T.w + G.DRAW_HASH_BUFF or
++        cursor_trans.y-G.ROOM.T.y < -G.DRAW_HASH_BUFF or cursor_trans.y-G.ROOM.T.y > G.ROOM.T.h + G.DRAW_HASH_BUFF then
+         return 
+     end
+ 
+@@ -1051,6 +1149,7 @@
+     if press_node then 
+         self.cursor_down.target = press_node.states.click.can and press_node or press_node:can_drag() or nil
+     end
++    if self:portrait_press_on_description() then self.cursor_down.target = nil end
+ 
+     if self.cursor_down.target == nil then 
+         self.cursor_down.target = G.ROOM
+@@ -1070,6 +1169,7 @@
+     self.is_cursor_down = false
+ 
+     self.cursor_up.target = self.hovering.target or self.focused.target
++    portrait_tap_ends_edit(self.cursor_up.target)
+ 
+     if self.cursor_up.target == nil then 
+         self.cursor_up.target = G.ROOM
+@@ -1300,7 +1400,10 @@
+         extern_button = true
+     end
+     if G.OVERLAY_MENU and not self.screen_keyboard and input_type == 'press' and G.OVERLAY_MENU:get_UIE_by_ID('cycle_shoulders') and (button == 'leftshoulder' or button == 'rightshoulder') then 
+-        focused = G.OVERLAY_MENU:get_UIE_by_ID('cycle_shoulders').children[1]
++        local _uie_cycle_shoulders = G.OVERLAY_MENU:get_UIE_by_ID('cycle_shoulders')
++        if _uie_cycle_shoulders and _uie_cycle_shoulders.children then
++            focused = _uie_cycle_shoulders.children[1]
++        end
+         extern_button = true
+     end
+     if focused and focused.config.focus_args then
+@@ -1379,4 +1482,3 @@
+     --Set the cursor to be in the correct position for that target
+     self:update_cursor()
+ end
+-

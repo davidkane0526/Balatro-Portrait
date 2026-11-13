@@ -1,0 +1,1454 @@
+# Changelog
+
+All notable changes to Balatro Portrait Mobile.
+
+## [v1.0.9](https://github.com/davidkane0526/Balatro-Portrait/releases/tag/v1.0.9) - 2026-11-13
+
+- Detect and support the supplied Balatro+ mobile source variant (game version `1.0.1o`, target `PROD_mobile`), including its newer collaboration credits and changed mobile feature flags.
+- Apply all 27 mobile patch files to the supplied IPA source without failed or fuzzed hunks.
+- Build `Game.love` from the supplied IPA: 310 packaged files; all 49 Lua files pass syntax parsing.
+- Build an unsigned portrait iOS IPA on the pinned vanilla LÖVE shell. Its bundle ID is `org.htf65jud.balatro`, so it installs separately from the source IPA's `com.playstack.balatroarcade`.
+- Keep the compact centered Play/Discard controls, wider Sort panel, lower action row, 120% Classic HUD and 10% larger overlapping hand cards.
+- On-device installation, layout and gameplay validation remain pending.
+
+## [v1.0.8](https://github.com/davidkane0526/Balatro-Portrait/releases/tag/v1.0.8) - 2026-11-13
+
+- Add iOS IPA input support and the initial portrait UI sizing pass.
+
+## [v1.0.7](https://github.com/LoreanXavier/balatro-portrait-mobile/releases/tag/v1.0.7) - 2026-11-11
+
+- **Zygisk: no more crash at start after an update** ("Could not open file
+  resources/fonts/TypoQuik-Bold.ttf"). Once Android has made the game's folder
+  under `/sdcard/Android/data`, the module built the portrait code there, while
+  its loader and the game read the internal save folder. The game kept running
+  the code of an older install, and when that install had Readabletro on and the
+  new one has it off, the font it asks for was gone. The code is now always built
+  in the internal save folder, and a stale build is replaced on the first start.
+- **Rootless APK: no more crash when many sounds play at once** (#10, "Could not
+  open file resources/sounds/paper1.ogg"). When every copy of a sound is busy,
+  the sound thread now copies the one already in memory instead of opening the
+  file again, and a sound it still cannot open is skipped instead of crashing
+  the game.
+- **A dragged card's description no longer shakes** (#11). Low on the screen
+  the description jumped between two places every frame: every other frame it
+  was placed on the card itself and pushed back up onto the screen from there.
+- **Game Over's Main Menu button is laid out right from the start** (#11). Its
+  text was drawn at its portrait size over a button laid out for the smaller
+  one, off to the right and over the New Run button, until Jimbo came in.
+- New `sound_burst` scenario, and `suite.py --only sound` runs it alone.
+- New `drag_tooltip` and `game_over_buttons` scenarios on a `razr` screen
+  (411x1005), and `suite.py --only issue11` runs them.
+
+## [v1.0.6](https://github.com/LoreanXavier/balatro-portrait-mobile/releases/tag/v1.0.6) - 2026-11-08
+
+- **A tap shows a card's description** (#9). A tap on a joker, a consumable, or a
+  card in the shop, a pack or the collection leaves its description open with your
+  finger out of the way; another tap on it, a tap on the description or a tap
+  anywhere else closes it. A finger held down still works, and cards in your hand
+  still go up on a tap. It's on by default: **Tap for Descriptions** in Settings,
+  under Game, in the game's language, turns it off for the old way.
+- A description left open never passes a tap to a button under it, so it can't
+  take you out of the shop by Next Round.
+- New `tap_tooltip` scenario, and `suite.py --only tap` runs it alone.
+
+## [v1.0.5](https://github.com/LoreanXavier/balatro-portrait-mobile/releases/tag/v1.0.5) - 2026-11-08
+
+- **No more crash after Stats.** Opening the usage pages of Stats (jokers,
+  consumables, vouchers) and then starting a round crashed the game at the blind
+  select, in every language. The game's own code there writes a global that the
+  portrait blind panel kept its `type` function in.
+- **Fits in long languages** (#8):
+  - Focus: the joker count stays clear of the blinds.
+  - The round's end keeps its dollars in one column, however long a row's text.
+  - Classic: "Choose your next Blind" stays inside its panel.
+  - A tag's tooltip by the screen's edge: its box was moved onto the screen and
+    its text left where it was.
+  - A card tooltip wider than the phone (French, Russian, Japanese, Indonesian, and
+    German with Steamodded) shrinks to fit, and long one-line tooltips wrap.
+  - A final boss's reward row stays inside its column.
+- **The Deck screen stays on the screen.** In Polish, with a boss weakening cards,
+  its columns were put one under the other and ran off the top and the bottom.
+  A menu is now stacked only when it still fits, and gets smaller text otherwise.
+- **Credits laid out for a phone**: even buttons, a readable text size, long
+  lines wrapped and columns in pairs, instead of the desktop page shrunk to 3 px.
+- **Counts follow the cards when Layout or Left or Right Hand is changed in a
+  run.** The deck's count and the card slots stayed behind and drifted further off
+  with each change, until they left the screen.
+- **Foldables**: on a nearly square screen the blinds and the shop no longer run off
+  the bottom.
+- **Tooltips near the bottom of the screen** are no longer cut off, and on a
+  tablet's Game Over Jimbo talks from beside himself when there is no room below.
+- The headless runs audit the text of every screenshot, tooltips included, and
+  `suite.py --hunt` sweeps every screen, card, boss and tooltip in every language
+  and size, with random play on top. New `blind_screen` and `stats_crash` scenarios.
+
+## [v1.0.4](https://github.com/LoreanXavier/balatro-portrait-mobile/releases/tag/v1.0.4) - 2026-11-07
+
+- **The menu comes down when the keyboard closes** (#4). Closing Gboard from the
+  chevron under it told the game nothing, so the menu stayed lifted and the field
+  stayed open until Enter. The APK and the Zygisk module now watch for the keyboard
+  leaving, and a tap beside the field ends the edit too. Tested on a OnePlus 13.
+- **New APKs install over the last one on Termux** (#6). Each Termux build signed
+  with a new key, and the Termux command starts from a fresh clone, so Android
+  refused the update as a conflicting package. Termux now signs with the key PC
+  builds use. A Termux install from before 1.0.4 needs one last uninstall: see
+  [docs/TERMUX.md](docs/TERMUX.md).
+- **Haptic Feedback has a strength** (#7): Off, Light, Medium (the new default) or
+  Strong, which is the old length. Pulses keep at least 0.08 s apart, since those
+  landing on each other felt like a rumble. In the APK the level also sets the
+  motor's power on phones that allow it; some, like OnePlus, play their own fixed
+  effect whatever the app asks.
+- New `keyboard` and `haptics` headless scenarios, and `tests/signing_test.py`.
+
+## [v1.0.3](https://github.com/LoreanXavier/balatro-portrait-mobile/releases/tag/v1.0.3) - 2026-11-07
+
+- **Swipe Only's cue stays clear of the hand** (#5). The corners of the fanned
+  cards ran up to 9 px into Play Hand and Discard on a 720 px wide screen, in all
+  three layouts. The cards now sit a little higher, and the cue and the "8/8"
+  stay where they were.
+- The `swipe` headless scenario checks every card's corners against the cue, with
+  cards picked at each end of the hand and in the middle.
+
+## [v1.0.2](https://github.com/LoreanXavier/balatro-portrait-mobile/releases/tag/v1.0.2) - 2026-11-06
+
+- **The black ellipse is gone** (#2), tested on the Pixel 7 that reported it.
+  Wrapping the time in 1.0.1 did not cure it there, so the half float overflow
+  given there as the cause was wrong or not the whole story. The CRT shader's
+  noise is the only code that multiplies the two screen coordinates, the shape of
+  the black area, and the official Android shader has it commented out. It now
+  stays out on every route, as there. The grain it added was too faint to see.
+  The CRT shader stays on, and `--disable-crt` is still there.
+- **Steamodded's Config tab fits the screen** (#3). In Spanish its two toggles
+  side by side ran it off both edges, and squeezing the menu only shrank its tabs
+  and buttons, not the text. A menu still too wide after squeezing now gets its
+  columns one under the other and keeps its buttons' size.
+- **Steamodded's version clears the corner** (#3). It sat flush with the top right
+  corner, where the CRT curve cut its last letters.
+- **The language box stays off the menu column** (#3). A long name such as
+  Español (España) made it wider than the room beside the column.
+- The `crt` headless scenario no longer draws the ellipse under an emulation of
+  half precision, since that passed on a fix that failed on a phone. It checks
+  that the shipped shader has no noise left and still takes `noise_fac`.
+- New `mod_menus` headless scenario: the title and the Mods screen's tabs with
+  Steamodded, in every language.
+
+## [v1.0.1](https://github.com/LoreanXavier/balatro-portrait-mobile/releases/tag/v1.0.1) - 2026-11-06
+
+- **The black ellipse is fixed.** The CRT shader's noise multiplies the screen
+  position by a time that starts at 400, and past 65504 that no longer fits a
+  half float. A GPU that runs the shader at half precision then draws everything
+  beyond that curve black. The time now wraps, so the number stays in range. The
+  official Android shader has the noise commented out, and the build had put it
+  back as it was. The CRT shader stays on, and `--disable-crt` is still there.
+- **The APK's mod folder is `ASET/Mods/` again** (#1), where Lovely looks by
+  default and where
+  [Balatro Mod Manager for Android](https://github.com/danitsdev/balatro-mod-manager-android)
+  looks too. Mods in the old `game/Mods/` move there by themselves on the first
+  launch and load from the second, and so does anything put in the old place
+  later. A mod bundled with `--steamodded` goes there too.
+- **Frame Rate** in Options > Settings > Graphics: the screen's rate as before,
+  or 60, or 30 to save battery.
+- **One-Thumb's score line keeps its height.** The hand's total came up larger than
+  the line had room for, which made the line taller and pushed it into the played
+  cards on a tablet.
+- **The build says it is working.** It prints what the first run is about to
+  download, and its output no longer sits in a buffer when run from Git Bash or
+  an IDE.
+- A new FAQ in the README: ready-made APKs, the Google Play version, cloud saves,
+  achievements, sign-in and battery.
+- `tools/headless/suite.py` runs the whole test matrix in one pool, three times as
+  fast as before. New scenarios: `crt` draws the ellipse under a half precision
+  emulation and checks the shipped shader does not, and `mod_folder` covers the
+  move to `ASET/Mods/`.
+
+## [v1.0.0](https://github.com/LoreanXavier/balatro-portrait-mobile/releases/tag/v1.0.0) - 2026-11-05
+
+**The reboot.** A new repository, a new version line, two new layouts, and a
+test suite that runs the real game. The old repository and its account are
+gone; its history is kept below, without its dead links.
+
+**Layouts** (Options > Settings > Game > Layout, applied at once, mid-run too)
+
+- **One-Thumb**: a short HUD on top, a score line right above the hand (hands
+  left, the hand's name over chips x mult, discards left) that stays up while
+  the hand scores, and Discard and Play as the biggest buttons. On a tablet
+  the score line is a compact two-row version, so it clears the jokers.
+- **Focus**: one full-width HUD read top to bottom (blind and target with Run
+  Info and Options, the round score with a bar filling towards the target,
+  the hand with chips x mult, the five run stats) and a single flat bar under
+  the hand.
+- **Classic** is the 2.x layout, and stays the default.
+- **Swipe Only Mode** is redesigned for all three: Play and Discard go, the
+  hand's cards grow 15% into their room and ease back to size when played, each
+  bar keeps the rest in one thin row (One-Thumb used to lose Options), and while
+  cards are selected a cue fades in beside the card counter, up for Play and down
+  for Discard, in the buttons' colours and on their sides. It applies at once,
+  mid-hand too, and the shop and blind panels stay in place.
+- Both new layouts follow written rules the suite measures: one column edge
+  to edge, three text sizes, nothing under 9 px in normal play on any tested
+  phone, no block on top of another.
+
+**Nothing off the screen**
+
+- Every menu is measured when it opens (and when a tab changes) and fitted
+  inside the screen with a margin: frame padding first, then card rows, then
+  minimum widths. On a 20:9 Android phone the Collection, Editions, Booster
+  Packs and Spectral pages used to run 2 to 7 px past both edges, and Run
+  Info, Profile and the Blinds collection touched them. Mods' menus go
+  through the same path.
+- Shop and blind select are placed against the real bottom of the screen
+  (the room starts below its top), so a tablet in Focus no longer loses the
+  shop's packs or the blind select's bottom.
+- On tablets Cash Out, Next Round, Reroll and the shop's jokers can be tapped
+  again (the panels rose onto the joker shelf, which took the taps), the
+  shop's bottom row is on screen, played cards stop above the hand, and tags
+  past seven stack downwards instead of onto the HUD.
+- Classic's sort column no longer pushes Play and Discard past the edges in
+  French, Russian and Indonesian, and its hand preview stays centred when a
+  long hand name widens it.
+
+**Every language the game ships** (de, fr, nl, ru, ja, zh_CN, zh_TW, ko,
+es_ES, es_419, pt_BR, it, pl, id)
+
+- Long labels wrap onto two lines or borrow width from the next column
+  instead of shrinking: "Durchlauf mit Code" no longer pushes Back off a
+  360 dp screen, "MISE INITIALE" no longer widens the Blinds collection,
+  "Weggooimogelijkheden" is no longer 3 px, Italian's long Settings toggle
+  fits, and Classic's Rank / Suit stack when their words are long.
+- The game sizes a hand's name by its length in bytes and chips / mult by
+  their digits; in the new layouts they keep their size and only shrink to
+  fit, so Japanese hand names and 99,999,999,999 are no longer 6 px.
+- Russian labels are grown to the English line height (its font draws a
+  tenth shorter); buttons widen for them where needed.
+- With Readabletro (the build's default) the new layouts are scaled to the
+  pixel font's line: TypoQuik draws a 28% taller line and 15% wider digits,
+  so a 99,999,999,999 round score ran off the screen and, on a tablet, the
+  taller HUD and score line pushed the joker shelf onto the stage.
+
+**Huge numbers**
+
+- naneinf no longer turns the score flames into solid blocks over the HUD.
+- Counters that grow mid-run (money in the billions, naneinf) re-fit as they
+  change in One-Thumb and Focus.
+- Stress-tested in every layout: 12 jokers over the slot limit, 6
+  consumables, a 12-card hand, 8 tags, a long boss, $9,999,999,999, ante 39,
+  round 999, scores of 99,999,999,999 and naneinf, then through the shop.
+
+**Mods**
+
+- Tested with Steamodded 26.1002.0 and 1.0.0-beta-1814a, Talisman 2.7,
+  JokerDisplay 2.0.8, Amulet 3.6.1 and Cryptid 0.5.17d.
+- Steamodded's play / discard limit shows in every button bar.
+- Steamodded 1.0.0-beta: card counters no longer read "52/nil".
+- Cryptid: the game starts (its game-over patch matches again), its intro
+  takes taps and is drawn full size, its tutorial bubble, panel and buttons
+  no longer overlap, and Steamodded's run select fits the screen.
+- A boss's two debuff lines and Steamodded's mod badge fit in the new
+  layouts' blind panels.
+- 25 Steamodded patches that found nothing to patch were reviewed one by one;
+  the ones that matter on a phone apply again or are done in the portrait
+  code.
+
+**Support**
+
+- Options has a **Support on Patreon** button at the bottom, on the title screen
+  and during a run. It opens the mod's Patreon page in your browser.
+
+**Fixes**
+
+- A long translation could leave copies of the Classic button bar alive
+  after it was removed; they crashed the next run (de, fr, ru, ...).
+- Options > Settings no longer crashes in a landscape window.
+- The explanation line under Enhancements, Seals and Editions has a dark
+  backing, so it reads over the title buttons behind it.
+
+**Zygisk module**
+
+- Fixed for the new code: `portrait_layouts.lua` is not in the official APK,
+  so the module now carries it as a preload, like `portrait_config`. Without
+  this the 1.0.0 code would not start under the module.
+- **No game code in the ZIP.** The module carries the patches and builds the
+  game from the app's own files on first launch, again after a module or game
+  update. If a Play update no longer fits the patches, the game starts as
+  shipped and `portrait_patch_error.txt` says why.
+- **Mods, experimental.** Lovely is built into the module, so Steamodded mods
+  run on the official app. Put mods in `/sdcard/BalatroMods`, press the
+  module's Action button or reboot; they are copied in with the app's owner.
+  With no mods Lovely never starts. The Lua side is tested with Steamodded,
+  Talisman, Amulet and Cryptid; the native hook has not run on a phone yet.
+- Version 1.0.0 (versionCode 1000), and its update link points at the new
+  repository.
+
+**Tooling**
+
+- **The game's code is out of the repository.** `patches/portrait/` holds what the
+  mod changes as unified diffs against 1.0.1o, and `build.py` applies them to your
+  copy of the game (`tools/patches.py`). A change that finds no place stops the
+  build and is named. Another game version needs `--allow-untested-game`.
+- `patches/portrait-mobile/` does the same from the Play Store copy, and gives
+  the same code, so the phone-only Termux build and the Zygisk module run exactly
+  what the Steam build runs.
+- `tools/headless/run.py` runs the game on a hidden desktop as any phone
+  size, with Android and iOS code paths, iPhone safe-area insets, any game
+  language, Lovely mods, and `--source zygisk` (the Play copy with the module's
+  chunk swapped in). Scenarios: smoke, menus, run (a bot plays a
+  seeded run), layouts, stress, mods. Checks include text and buttons off
+  screen, menu panels too close to the edge, blocks overlapping, text under
+  7 px, and UI left alive after its box was removed.
+- 1.0.0 passes it on 8 screen sizes, 5 mod sets, 14 languages and the Zygisk
+  staging (which is also the suite's Readabletro run).
+- `showcase` records the README's GIFs from the real game
+  (`tools/headless/make_gif.py`).
+
+---
+
+# Before the reboot: the old 1.x and 2.x line
+
+These versions came from the old repository. Its 1.x numbers have nothing to
+do with the new 1.0.0.
+
+## v2.8.0 - 2026-09-15
+
+**The title screen corner buttons stay clear of the menu on narrow phones** (#48).
+
+- **A stale spacer in the menu root.** When the language button moved into its
+  own box, a 0.7 tile spacer that used to sit beside it stayed behind. The menu
+  root was that much wider than the panel it drew, the panel sat 0.35 tiles left
+  of centre, and the right-hand corner button was placed 0.7 tiles further out
+  than the left one. Removed, so the root is the panel and both sides match.
+- **Corner buttons are moved inward only as far as their side has room.** The
+  nudge off the rounded display corners was a fixed distance, and on a 360dp
+  phone the language box landed on top of the Collection button and the panel.
+  Each box now measures the gap between the room edge and where the menu column
+  actually landed on its side, and moves in by whatever fits while keeping
+  0.15 tiles clear of the column. The measurement is taken at build time, so a
+  Mods button, a Quit button or a different UI scale changing the column's
+  width is accounted for. Checked on the desktop rig at 360x800 with the
+  Android layout and at 390x844 with the iOS one; the phone case has both
+  boxes beside the column with the clearance kept, and the iPhone case keeps
+  its full nudge.
+
+**Docs**
+
+- docs/IOS.md no longer claims 120 Hz works on ProMotion; the one report so far
+  says it does not, and the Diagnostics report now carries what settles it.
+
+## v2.7.9 - 2026-09-03
+
+**Decks can be picked again with a current Steamodded** (#47).
+
+- **The New Run screen.** Recent Steamodded replaces it with a wide deck grid
+  and a panel beside it, built for a desktop window, so on a phone it ran off
+  both edges and took the Select button with it. Steamodded keeps the old screen
+  behind its own "vanilla run select" option and that is the one portrait is
+  built around, so on a phone it is now the default. Anyone who turns it off in
+  Steamodded's settings keeps their choice.
+- **The bundled Steamodded version now actually reaches the phone.** The copy
+  was skipped whenever the mod folder already existed, so whichever version was
+  installed first stayed forever and rebuilding with another one changed
+  nothing. What was installed is recorded beside it now and the copy is redone
+  when the build carries something different.
+- **Picking a version by name works.** Anything that was not a number fell
+  through to the latest release without a word. The prompt takes a tag as well
+  now and asks again instead of quietly choosing for you, and the download is
+  named after the tag so a cached archive cannot stand in for another version.
+
+Checked on a phone rather than assumed: a device holding Steamodded 1.0.0-beta-1814a
+picked up 26.829.0 on the first launch after installing a build carrying it, and
+the deck picker on that same phone fits the screen with every control reachable.
+
+## v2.7.8 - 2026-09-03
+
+**Fixes a v2.7.7 launch crash on Android.** Update if you built the last one.
+
+- **The flame fix from v2.7.7 stopped some phones starting at all** (#46). Raising
+  the default float precision in `flame.fs` also raised it for the parameters of
+  `effect`, but LOVE's own preamble declares that function's prototype under
+  `precision mediump float`, and GLSL ES rejects a prototype and a definition
+  whose parameter precisions differ. The parameters are spelled out as mediump
+  now, matching the prototype, while the locals inside keep the highp the flame
+  needs. Checked against the Khronos reference GLSL ES compiler: the 2.7.6
+  shader compiles, the 2.7.7 one fails with the reporter's four lines word for
+  word, this one compiles. Whether a driver enforces the rule varies, which is
+  why it took a Pixel 8a and an S23 to surface it and never showed on iOS.
+- **A mod resizing the window during run setup could take the game down**
+  (#45). `set_screen_positions` checked that the hand existed before touching
+  the joker, play, consumable, deck and discard areas, and Silk Touch got in
+  there before the rest of them were built. Reproduced on the desktop rig by
+  nulling that area at the same point, which gave the reporter's exact error,
+  and it now guards every area it uses.
+- **Steamodded's mod list fits a phone** (#45). It lays mods out three to a row
+  with a pane a fixed 17 tiles wide and a list area a fixed 5 tiles tall, so on
+  a phone the rows ran off both edges with the last mod's toggle out of reach
+  and the pane's frame sat off screen. It now shows one mod per row, six to a
+  page, with the page selector Steamodded already draws rebuilt for the new
+  count, so the rest are one page turn away. Tested at 390x844 with four and
+  with eleven mods, including a deliberately overlong mod name.
+- **The iOS build keeps the Balatro icon.** The shell that carries the mod
+  loader ships its own, which is not what belongs on a home screen (#45).
+- **The Android title screen gets the same bottom gap as iOS.** The menu panel
+  sat flush against the bottom edge of the screen. It cannot be measured there
+  the way it is on iOS, since LOVE reads the Android safe area from the display
+  cutout and the game runs immersive, so it is a flat gap measured against this
+  phone's gesture inset.
+- **Diagnostics reports the refresh rate and the frame cap**, which is the
+  difference between a panel that is 60 Hz and a game capping itself at 60.
+
+## v2.7.7 - 2026-08-30
+
+Follow-ups from the #45 tester, who confirmed the 2.7.6 resolution and corner
+fixes on an iPhone 13 Pro. Still iOS only.
+
+**iOS**
+
+- **The build can load mods now.** He had Steamodded running on his iPhone
+  through [Lovely Mobile Maker](https://lmm.shorty.systems/) but could not get
+  it working with this build, and asked why. Because `--ios` packed the game
+  into a plain LÖVE shell with no mod loader anywhere in it. Android never had
+  that problem: its base APK already comes from the same service with
+  lovely-injector inside. The iOS build now uses that service's iOS shell the
+  same way. Mods go where the
+  [Steamodded mobile guide](https://docs.smods.dev/Installation/Installing%20Steamodded%20mobile/)
+  says, **Files → On My iPhone → Balatro → game → Mods**. The bundle id is kept
+  at the one the old shell used, so this installs over an earlier build instead
+  of appearing as a second app with an empty save folder, and `--ios-vanilla`
+  still builds on the plain shell. Verified as far as it can be from here: the
+  IPA carries lovely, the game lands in the right bundle, and the plist keeps
+  the portrait lock, the version, the ProMotion key and the old bundle id.
+- **The flame over the score boxes.** When a hand beats the blind the chips and
+  mult boxes are meant to catch fire. On iOS they turned into solid blue and red
+  slabs that spilled out of the HUD panel. The flame's silhouette is a threshold
+  on numbers in the thousands (`flame_up_vec` walks time up to +-5000 and the
+  per-pixel detail is the small offset added on top), and GLSL ES gives locals
+  the *default* float precision: at mediump a number that size steps in whole
+  units, so every pixel of the quad lands on the same value and the threshold
+  flips for all of them at once. Reproduced on the desktop rig by quantising
+  that value, then fixed by declaring the highest precision the device has.
+  `build.py` patches `flame.fs` on the way into the build, the same way it
+  already patches `CRT.fs`. Steamodded ships the same patch for mobile, which is
+  a second vote for it. The Zygisk module carries Lua only, so this reaches the
+  APK and IPA builds, not the rooted install.
+- **The menu clears the home indicator.** The menu column finished 8pt from the
+  bottom of the screen, so the swipe bar sat on top of it. It now ends level
+  with the safe-area bottom, lifting by whatever inset the device reports.
+
+**Docs**
+
+- docs/IOS.md covers the mod loader and where mods go, and no longer claims mods
+  cannot run on iOS at all.
+
+## v2.7.6 - 2026-08-29
+
+The first round of iOS-only fixes, from the test report in #45. Nothing here
+touches Android or desktop.
+
+**iOS**
+
+- **The game is drawn at the screen's real resolution.** iOS hands LOVE a
+  drawable the size of the window in points unless the window asks for the
+  native scale, so an iPhone 13 Pro rendered everything at 390x844 and let the
+  system stretch it over a 1170x2532 panel. That is the soft picture in the
+  report, and it is why the diagnostics said `DPI scale: 1`. The flag is set in
+  `conf.lua` and is now also kept through the window rebuild the game does at
+  boot, which used to undo it. Android reads its scale from the display density
+  and ignores the flag entirely, so it is unaffected.
+- **ProMotion phones run at their real refresh rate.** iOS holds an app to
+  60 Hz unless `CADisableMinimumFrameDurationOnPhone` is in `Info.plist`, and
+  OpenGL ES presents without blocking, so the game ran its loop at 120 while
+  the panel showed every other frame. That is a 119 FPS counter over 60 Hz
+  motion. The IPA build writes the key now.
+- **The title-screen corner buttons keep off the rounded corners.** The safe
+  area iOS reports covers the home indicator but not the curve of the display.
+  Measured off the report's screenshot, the profile box sat 4pt from the left
+  edge with the corner arc cutting 2.5pt into it, so it grazed the bezel as the
+  menu swayed. Both corner boxes now step up and in on any device with a home
+  indicator, which puts about 12pt between them and the curve
+  (`corner_lift_ios` and `corner_inset_ios` under `main_menu`).
+
+**Docs**
+
+- docs/IOS.md covers the native scale, the refresh-rate key and the corner
+  nudge, and no longer lists high refresh rate as unverified.
+
+## v2.7.5 - 2026-08-27
+
+A pass over the things that only show up on a phone in your hand, most of them
+reported in #44 with video of each one.
+
+**All builds**
+
+- **Only the device keyboard opens now.** Tapping a text field brought up
+  Balatro's own on-screen keyboard as well, drawn behind the menu with the
+  menu's buttons still live on top of it, so a rename could land on Reset
+  Profile. That keyboard is there for controllers and is no longer built on a
+  phone at all.
+- **Typing replaces what the field held.** The device keyboard opens with an
+  empty buffer of its own, so its backspace could never reach a name or seed
+  that was already there. The first character typed now clears the field, the
+  way selecting the text does on a desktop. Backspace or an arrow key cancels
+  that and editing carries on as normal.
+- **The menu lifts clear of the keyboard.** A field low on the screen sat behind
+  the keyboard while you typed into it. The menu now rises until the field is
+  near the top, and drops back when the keyboard closes.
+- **Seed controls are thumb sized.** The seed field, Paste Seed, the note beside
+  them and the Seeded Run toggle were laid out for a mouse and were too small to
+  read or hit.
+- **Sell and Use buttons on the last slot** used to slide under the card, or off
+  the screen entirely, when there was no room to their right. They move to the
+  other side of the card instead.
+- **Tooltips hold still.** They followed the finger up and down while the card
+  underneath stayed put. They anchor to the card now, with a gap wide enough
+  that a thumb on the card does not cover the text
+  (`PORTRAIT_CONFIG.tooltip_card_gap`).
+- **Tags stay on screen.** The first tag hung off the side of the joker row,
+  which nearly fills a portrait screen, so a third of it sat past the edge.
+- **The Challenges window fits.** Its preview area asked for more width than a
+  phone room has, cutting the page arrows and the Back bar off at both edges.
+- **The Mods button has a place in the menu.** Steamodded appends it to the main
+  menu and restyles the panel on the way past, which left it hanging off the
+  side with the rest of the menu out of line. It sits beside Options at the same
+  size now, and Play and Collection line up with that row.
+- **The mod loader's boot screen fits the screen.** Its icon fell off the left
+  edge and the status line ran past the right. Whatever a loader draws there is
+  scaled to the window and long lines are squeezed to fit, so this holds for
+  future Steamodded releases rather than one version's layout.
+- **The accelerometer is no longer treated as a gamepad.** Android lists it as a
+  three axis joystick, and gravity alone keeps an axis past the deadzone, which
+  could flip the game into controller mode on its own.
+
+**Docs**
+
+- The save transfer guide now says to check the file dates inside a Takeout
+  export before building. Play Games writes the two saved games separately, and
+  `meta.jkr` can carry today's date while the profile beside it is months old
+  (#43).
+
+## v2.7.4 - 2026-08-21
+
+The windows that ran off the side of a phone screen, reported together in #42
+with a screenshot for every one of them.
+
+**All builds**
+
+- **Boss rules are readable again with Steamodded installed** (#42). Steamodded
+  changes how a blind's description is stored: instead of two strings the same
+  table holds parsed text nodes, and the HUD patch that would have handled them
+  does not match the portrait HUD. The two rows printed the raw table pointer
+  ("table: 0x...") as a result. They now go through the same flattening the
+  blind popup has always used, so the text reads correctly with and without
+  Steamodded.
+- **Credits, Language and Card Stats fit the screen** (#42). All three were laid
+  out for a desktop-width room and were cut off on both edges. Each now measures
+  itself against the live room width, so the fit holds on any aspect ratio
+  instead of one tuned device.
+- **Steamodded's Collection pages fit too** (#42). Every card page there is built
+  by a single Steamodded helper that sizes each row for a desktop room, which
+  pushed the outer cards past the screen edge. Portrait now feeds that helper
+  sizes derived from the room. Pages that already fit are left exactly as
+  Steamodded built them.
+
+**Still open**
+
+- Steamodded also replaces Collection > Blinds, View Deck and Run Info > Poker
+  Hands outright, and those replacements are still wider than a phone room. Its
+  loading screen is laid out for landscape as well. They are Steamodded's own
+  screens with no size hooks to feed, so they belong upstream rather than here.
+
+## v2.7.3 - 2026-08-16
+
+Hotfix for Steamodded builds broken by v2.7.2.
+
+**All builds**
+
+- **Steamodded loads again** (#41). The v2.7.2 Blinds-page fix edited two
+  lines inside `create_UIBox_your_collection_blinds` that Steamodded's
+  lovely patches use as anchors. With Steamodded bundled, part of the patch
+  set stopped matching while its cleanup step still applied, which left
+  unbalanced code behind and crashed the game on boot with a syntax error.
+  Both anchor lines are byte-identical to vanilla again and the portrait
+  metrics are applied after them instead of inside them, so the page keeps
+  the compact v2.7.2 look with and without Steamodded. Verified against the
+  Steamodded 1.0.0-beta-1814a patch set.
+
+## v2.7.2 - 2026-08-16
+
+Collections cleanup round. Both bugs came in through the issue forms with
+screenshots that made them reproducible on desktop, plus one readability
+request for the blind select screen.
+
+**All builds**
+
+- **The Blinds page in Collections fits the screen again** (#38). The ante
+  table and the chip grid kept their desktop dimensions, about a tile wider
+  than a phone room, so both edges clipped on narrow screens. Portrait now
+  uses compact metrics for that page (slightly smaller chips, tighter
+  padding, narrower table columns) and the window sits inside the screen
+  with a margin on both sides. Landscape keeps the vanilla numbers.
+- **Deck descriptions in Collections keep one size** (#39). The first
+  render used the default text scale, but switching decks rebuilt the info
+  through the run-setup path and its compact portrait scale, so the text
+  shrank and stayed small until the window was reopened. The collections
+  viewer has its own rebuild now: every deck shows at the same full size,
+  and even four-line descriptions stay inside the white card with
+  Readabletro fonts.
+- **Tap a blind token for a full-size rules card** (#40). The boss rules on
+  the blind select screen are the smallest text there because the panel has
+  to fit three columns. The token now answers a tap with the same popup
+  card the Collections Blinds page uses: name, rules text at readable size,
+  and the score requirement.
+
+## v2.7.1 - 2026-07-08
+
+Patch for the first v2.7.0 iPhone test report, and a good showing for the new
+Diagnostics screen: the pasted numbers made the bug reproducible on desktop
+down to the pixel.
+
+**iOS (experimental, testers wanted)**
+
+- **No more black bar above the HUD during a run** (#36). The in-run felt
+  background is centered on the play area and carried a smaller vertical
+  margin than the menu splash, so once the top inset pushed the room down
+  and the bottom trim shortened it, the felt stopped 0.7 tiles short of the
+  physical top. It now uses the same margin as the menu. The title screen
+  was already fine, and Android looks the same as before.
+
+## v2.7.0 - 2026-07-08
+
+A big one. The flashable Zygisk ZIP stops carrying files derived from the
+game, the shop buttons match vanilla again, and there is a new Diagnostics
+screen that puts exact numbers into bug reports.
+
+**All builds**
+
+- **The shop buttons are back in vanilla order.** Portrait mode had Reroll on
+  top and Next Round below it, the opposite of desktop, and muscle memory made
+  people reroll when they meant to leave the shop. Next Round now sits on top.
+- **New Diagnostics screen** under Options: mod and game version, window and
+  safe-area numbers, tile and room dimensions, build type, FPS. One tap copies
+  the whole report for pasting into an issue, and the new issue forms ask for
+  exactly that.
+- **The CRT flags now say what they do.** `--crt` used to disable the CRT
+  shader, which read backwards. The real flags are `--disable-crt` and
+  `--keep-crt` (old spellings still work as aliases), every prompt asks
+  "Disable the CRT shader?", and Zygisk variant names read literally: `crt-on`
+  means the shader is on.
+- The mod version lives in one place now (`PORTRAIT_CONFIG.version` in
+  `src/portrait_config.lua`). `build.py` reads it from there, and the Zygisk
+  packaging refuses to ship a `module.prop` or `update.json` that disagrees.
+
+**iOS (experimental, testers wanted)**
+
+- The v2.6.5 safe-area math has a fixture test now
+  (`tests/safe_area_test.lua`), pinned to recorded per-device insets, and a
+  CI workflow boots real iOS Simulators to check the numbers those fixtures
+  assume. Reports from physical iPhones are still the missing piece: the new
+  issue form plus the Diagnostics screen make one take about five minutes.
+
+**Zygisk**
+
+- **The flashable ZIP no longer embeds the game's shaders.** It used to carry
+  transformed copies of every `.fs` file from the extracted game. Only two of
+  them were actually replaced (with repo-owned Readabletro files) and one was
+  patched, so now the ZIP ships just the replacements plus find/replace rules,
+  and `game.lua` applies those to the originals read from the installed APK at
+  runtime. A parity test checks the result byte for byte against what
+  `build.py` produces. Side effect worth having: the module now builds from a
+  bare checkout, no extracted game resources needed.
+- **Update notifications.** `module.prop` points at `zygisk/update.json`, so
+  KernelSU, Magisk and APatch can show new releases in the manager app.
+- The ZIP itself is packaged with forward slashes and LF line endings no
+  matter which PowerShell or git config built it. A ZIP built with Windows
+  PowerShell 5.1 used to flash broken (backslash entry names, CRLF
+  `customize.sh`).
+
+**Termux**
+
+- The build script now recognizes the abandoned Google Play build of Termux
+  and stops early with instructions to install from F-Droid, instead of dying
+  later with `Unable to locate package openjdk-17`. On healthy installs it
+  tries `openjdk-17`, `openjdk-21` and `openjdk` in order, so a renamed JDK
+  package no longer kills the build.
+
+**Project**
+
+- CI grew three jobs: `luacheck` with a config tuned for a mostly-vanilla
+  codebase, the safe-area fixture test, and the iOS Simulator inset check.
+- GitHub issue forms: bug report, iOS test report (device, iOS version,
+  Diagnostics paste and screenshots required), and feature request.
+- README: jump links up top, a proper tester ask for iOS, troubleshooting
+  links per build path, less repetition.
+
+## v2.6.5 - 2026-07-07
+
+Follow-up to the v2.6.4 notch fix: the same safe-area shift was quietly
+pushing the bottom of the title screen off iPhones.
+
+**iOS (experimental, testers wanted)**
+
+- **Title-screen buttons no longer fall off the bottom of the screen.** The
+  room is shifted down by the top safe-area inset but kept its full window
+  height, so the Options button and the profile/language corner buttons
+  overshot the physical screen once the measured iPhone inset outgrew the
+  Android-tuned 0.85-tile floor, and the home indicator was never accounted
+  for at all (#35). The room height is now trimmed using the real bottom
+  inset from `love.window.getSafeArea()`, which lands the bottom row exactly
+  where the Android tuning intended. Android behaviour is unchanged, and the
+  trim falls back to the old behaviour if the safe-area API is missing.
+  Still unverified on a physical iPhone, so please report how it looks on
+  yours. The `safe_area_bottom_extra_ios` knob in `portrait_config.lua` adds
+  more room above the swipe bar if you want it.
+
+## v2.6.4 - 2026-06-28
+
+Two fixes straight from the issue tracker: a Quit button that could brick relaunch
+on mobile, and the iPhone notch sitting on top of the score.
+
+**Android / mobile**
+
+- **The main-menu Quit button is hidden on Android and iOS.** Quit called
+  `love.event.quit()`, which finishes the activity but leaves the Android process
+  alive, so the next launch re-ran `love.boot` against an already-initialized
+  filesystem and died with `Failed to initialize filesystem: already initialized`
+  on every relaunch until app data was cleared (#33). Mobile OSes own the app
+  lifecycle, so the button now follows the same rule as the console builds and is
+  gone. (Steamodded users already sidestepped this, since it swaps Quit for the
+  Mods button.)
+
+**iOS (experimental, testers wanted)**
+
+- **The score no longer hides behind the notch / Dynamic Island.** iOS was reusing
+  one static top inset tuned for Android front-camera punch-holes
+  (`safe_area_y = 0.85`), which is too short for an iPhone island (#34, #11). The
+  top inset is now read from the device at runtime with `love.window.getSafeArea()`
+  and converted to room tiles, so each iPhone is pushed down by its own real safe
+  area, with the static value kept only as a floor. Android behaviour is unchanged.
+  This is still unverified on a physical iPhone — please report how it looks on
+  yours. `portrait_config.lua` has a `safe_area_extra_ios` knob if you want a touch
+  more breathing room.
+
+**Heads-up**
+
+- A build posted on issue #34 that claims to "fix the notch" is **malware, not a
+  patch** — it is an unrelated `.apk` linked from a throwaway repo, with no Balatro
+  code in it. Do not install random "fixed" builds. The only safe path is building
+  your own APK/IPA from this source, or the signed Zygisk ZIP on the Releases page.
+
+## v2.6.3 - 2026-06-19
+
+The headline here is Steamodded. Newer Steamodded builds ship Lovely patches that
+target vanilla Balatro UI code, and the portrait rework had moved that code, so
+starting a run with Steamodded loaded could crash on the blind select screen.
+This release makes the portrait UI handle modded content directly instead of
+leaning on those patches landing.
+
+**Steamodded compatibility**
+
+- **Starting a run with Steamodded no longer crashes on the blind select.** The
+  blind name and description boxes now render Steamodded's parsed localization
+  through `SMODS.localize_box`, with a plain-string fallback for vanilla. This
+  covers both the blind-choice cards and the blind info popup.
+- **Hand and discard limits have safe defaults.** `play_limit`, `discard_limit`,
+  and `no_limit` are seeded in the starting params, so mods that read them at the
+  start of a run no longer hit a nil value.
+- **Fixed two variable-shadowing bugs that surfaced under mods.** A local named
+  `type` was shadowing Lua's builtin inside the blind description code, and a
+  local named `os` was shadowing the `os` library during startup.
+
+**Save transfer**
+
+- **Carry your save into the portrait app**, from desktop Balatro or the official
+  Play Store app (via Google Takeout, no root or Shizuku). `build.py --import-save`
+  bakes the save into the APK and the first launch restores it into an empty
+  profile; `tools/import_save.py` and a manual copy still work too. See
+  [docs/SAVE_TRANSFER.md](docs/SAVE_TRANSFER.md).
+
+**Mods**
+
+- **One-command Steamodded.** `build.py --steamodded` fetches a version you pick
+  from GitHub and bundles it into the APK. It installs itself on the first launch;
+  restart the game once and it is active. See [docs/MODDING.md](docs/MODDING.md).
+- **The mod folder moved to `game/Mods/`.** This sits inside the LOVE save dir, so
+  a bundled mod can install itself without root. Put manual mods there instead of
+  the old `ASET/Mods/`. (The Zygisk path keeps using `ASET/Mods/`.)
+
+**Other**
+
+- The rootless APK now forces portrait at the SDL layer during the build, so the
+  orientation is locked even before the Lua side starts.
+
+## v2.6.2 - 2026-06-17
+
+This is a small but important polish release for the portrait HUD and shop flow.
+The focus is not a new install path this time; it is making the existing Android
+paths feel less patched-together in real play.
+
+**Portrait gameplay fixes**
+
+- **Consumable Sell/Use buttons no longer fight the right edge of the screen.**
+  The tray button column is now drawn after the selected card and nudged inward
+  only when it would overflow. This keeps the button visible without moving the
+  card row or breaking the empty-slot outlines.
+- **Booster-pack USE buttons reveal below the selected card instead of covering
+  the card art.** Booster cards lift a little higher in portrait, the hand row
+  sits clear of the selected pack card, and the USE button is anchored in the
+  revealed space below it.
+- **Shop Open/Redeem/Buy labels sit better inside the larger portrait buttons.**
+  The button boxes stay anchored to the card, but text nodes now support a local
+  draw offset, so the labels can be optically centered without changing the
+  global font metrics or Readabletro's font patch.
+- **Partial joker and consumable rows stay lined up with their outlines.** When
+  you have fewer cards than the row limit, held cards now stay centered in their
+  fixed portrait slots instead of spreading away from the faint empty outlines.
+- **Tag hover popups keep fitting after layout settles.** Tag tooltips are
+  re-fitted while they exist, so measured-width changes no longer leave a popup
+  hanging off the side of the screen.
+
+**Build and install flow**
+
+- **Termux builds now ask the same user-facing questions as PC builds.**
+  `termux-build.sh` prompts for Readabletro and CRT-disable choices, while still
+  accepting `--readabletro`, `--no-readabletro`, `--crt`, and `--no-crt` for
+  scripted runs.
+- **The Zygisk module metadata is bumped to 2.6.2.** The release ZIP is rebuilt
+  from the same portrait sources as the rootless builder.
+
+**Docs**
+
+- The README has been simplified around the real user choice: rootless APK
+  builder, no-PC Termux build, experimental Zygisk module, or experimental iOS.
+  The long Termux and Zygisk details now live in their own docs pages instead of
+  crowding the first install path.
+
+**Release artifact**
+
+- `balatro_portrait.zip` is the Zygisk module for rooted users who want to keep
+  the official Play Store app installed.
+- Rootless APK builds are still built locally and are not uploaded because they
+  contain the user's own game files.
+
+## v2.6.1 - 2026-06-14
+
+A small portrait-mode bugfix release covering the in-game tag HUD. Both fixes are
+portrait-only and do not change the rootless or Termux build flow.
+
+**Fixes**
+
+- **Skip tags no longer push the tag row off-screen.** When you already had two or
+  more tags and then took a Skip Blind tag, removing a tag re-aligned the
+  remaining tags using the landscape anchor, which slid the whole row out of the
+  visible area in portrait. The removal path in `tag.lua` now reuses the same
+  portrait alignment that new tags are created with (left or right anchor based on
+  the play-hand side, attached to the joker row), so the row stays in place.
+  Thanks to Cpt-mustard for the detailed report and patch in #28.
+- **Tag tooltips stay inside the screen near the edges.** Hovering a tag close to
+  the left or right edge in portrait could let its info popup run off-screen,
+  because the tooltip relied on a width measurement that is not settled for a
+  static HUD element. Tag popups now compute their horizontal position directly
+  from the tag's on-screen location and pull the popup back inside the screen,
+  with the existing room-fit clamp kept as a fallback. The new
+  `get_portrait_top_popup_config` helper in `portrait_config.lua` centralizes this
+  so other top-anchored sprites can reuse it.
+
+**Zygisk**
+
+- The release `balatro_portrait.zip` is rebuilt so rooted Zygisk users get both
+  fixes. The rootless APK is still not uploaded because it contains the user's own
+  game files.
+
+## v2.6.0 - 2026-06-13
+
+This release finishes the other half of the Android story. v2.5.0 gave rooted
+users a Zygisk route that keeps the official Play Store app installed. v2.6.0
+brings the rootless builder closer to the same idea for people with no PC: build
+the separate portrait APK directly on the phone, using the already-installed
+official Play Store Balatro as the resource source.
+
+The important part is what is no longer required. You do not need to copy
+`Balatro.exe` from a computer, hunt for a working Termux apktool fork, or manually
+wire up an ARM `aapt2`. Install the official game, install Termux, clone the repo,
+run the helper, and the builder can make the portrait APK on-device.
+
+**New: PC-free Termux build from the installed Play Store app**
+
+- **`build.py` can find the official Android app automatically.** On Termux, when
+  no `--balatro` path is provided, it calls `/system/bin/pm path
+  com.playstack.balatro.android`, finds the installed `base.apk`, and uses that
+  as the resource source. This avoids Termux's own `pm` wrapper, which can fail
+  on package-manager calls.
+- **Official Android APK resources are understood directly.** The extractor now
+  accepts both the desktop/LÖVE layout (`resources/`, `localization/`) and the
+  Play Store APK layout (`assets/resources/`, `assets/localization/`).
+- **`termux-build.sh` is a one-command phone build helper.** It installs missing
+  Python/Java packages through Termux, then runs the normal builder with the
+  recommended rootless options.
+- **Termux signing no longer depends on desktop signing tools.** On Android, the
+  build uses native `apksigner` with a local debug keystore. If `zipalign` is not
+  available in the Termux repo, the build signs without it instead of failing at
+  the last step.
+- **The existing ReVanced ARM `aapt2` path is now tested in the real flow.** The
+  builder still uses the downloaded iBotPeaches apktool jar unless a native
+  apktool is already present, and passes ReVanced's ARM `aapt2` during rebuilds.
+- **`docs/TERMUX.md` documents the actual phone flow.** Storage permission is a
+  separate Android dialog step; after that, the build command can be pasted as a
+  single `pkg update -y && pkg install -y git && ...` chain.
+
+**Android compatibility fixes found while testing the phone-only path**
+
+- **Official Android CRT shaders are patched during build.** The Play Store APK's
+  `CRT.fs` comments out `noise_fac`, but portrait `game.lua` still sends that
+  uniform. The builder now restores the noise uniform and its use after extracting
+  the user's own shader, fixing the `Shader uniform 'noise_fac' does not exist`
+  crash.
+- **Generated resource folders are refreshed cleanly.** `game_original_files/` is
+  cleared before extraction, which avoids stale desktop/Android resource layouts
+  getting mixed together between builds.
+
+**Verified on-device**
+
+- Tested on Android with shell superuser disabled.
+- Termux built the APK from the installed official Play Store Balatro.
+- The resulting `com.unofficial.balatro` APK installed and reached portrait
+  in-game play.
+- The release still includes `balatro_portrait.zip` for rooted Zygisk users. The
+  rootless APK is not uploaded because it contains the user's own game files.
+
+## v2.5.0 - 2026-06-12
+
+2.4.0 is skipped on purpose. This release opens a second install path that has
+been asked for since the project started: keep the official Google Play
+Balatro installed, keep its Play signature intact, and load the portrait port at
+runtime.
+
+Until now the rootless APK builder was the only practical route. It still is the
+recommended path for most people, and it is better than before, but it has one
+hard limit: the built APK contains the user's game files, so releases can never
+ship a ready-to-install APK. The new Zygisk path changes that for rooted users.
+The release can now include `balatro_portrait.zip` directly, because the module
+does not contain the official APK or redistribute Balatro's packaged assets. You
+install the Play Store game yourself, install the module from KernelSU, Magisk,
+or APatch, reboot, and the official app is patched in memory when it starts.
+
+**New: Zygisk module for the official Play Store app**
+
+- **Runtime portrait injection for `com.playstack.balatro.android`.** The module
+  hooks LÖVE's Lua chunk loader inside `liblove.so` and swaps matching chunks
+  with the portrait Lua payload as the official game starts. The APK is not
+  modified or re-signed.
+- **Portrait orientation is forced at runtime.** The module intercepts SDL's
+  orientation request and calls Android's portrait orientation directly, instead
+  of letting the game briefly request landscape first.
+- **Readabletro and CRT choices are made during module install.** The ZIP builds
+  all four variants into one package. The installer tries the root manager's
+  volume-key helper first and falls back to direct `getevent` key reading, which
+  fixes KernelSU-Next installs where `chooseport` is unavailable.
+- **The Zygisk release ZIP is now a real release artifact.** Rootless APKs still
+  cannot be uploaded because they include the user's game copy. The Zygisk ZIP
+  can be uploaded because it only contains the module, portrait payload, hook
+  support library, and optional Readabletro resources.
+
+**Rootless builder changes**
+
+- **Android modding is always on.** `build.py` no longer asks whether to include
+  Lovely or accepts `--with-lovely` / `--no-lovely`; Android builds always use
+  the Lovely base path. If you build the rootless APK, you get mod support.
+- **Termux apktool handling is less fragile.** On Termux, the script now expects
+  native `apktool` and `aapt2` in `PATH`, passes `--use-aapt2 -a <aapt2>` during
+  rebuilds, and prints the failed command/stdout/stderr when apktool fails.
+
+**Zygisk compatibility fixes found on-device**
+
+- **Official mobile LÖVE 12.5.6 runs the portrait Lua payload.** The first proof
+  was rough, but useful: the official app reached game startup with injected
+  Lua, which meant the plan was viable.
+- **Localization stays official.** Early manual packaging accidentally deleted
+  Lua localization files, which produced `G.localization` nil crashes. The
+  Zygisk generator now skips localization entirely and leaves the Play APK's
+  localization files alone.
+- **Landscape flash is removed.** The orientation hook no longer forwards the
+  original landscape request before forcing portrait.
+- **`G.CANV_SCALE` is guarded during early Android resizes.** Official mobile can
+  hit `love.resize` before the portrait canvas scale exists.
+- **Shaders are injected through a Lua preload.** The official mobile shaders
+  differ enough that missing/optimized uniforms can crash `:send`; portrait
+  shaders now come from an injected `portrait_shaders` module.
+- **Readabletro resources are binary-safe.** PNG and TTF resources are embedded
+  as base64 with size and magic-byte checks, then verified again after writing
+  to LÖVE's save filesystem. This fixes the `BlindChips.png unsupported file
+  format` crash and gives us a safer path for future embedded resource work.
+
+**Docs**
+
+- README now presents two install paths: the rootless APK builder for most users
+  and the experimental Zygisk module for rooted users who want to keep the
+  official Play install.
+- `docs/MODDING.md` separates rootless Lovely modding from the current Zygisk
+  path. Full Lovely/Steamodded parity for the official Play package is still
+  future work, not something this release pretends to solve.
+- `zygisk/README.md` documents local module builds, release ZIP installs, and
+  why this route can be published as an artifact while APK builds cannot.
+
+## v2.3.0 - 2026-06-11
+
+Swipe Only mode, a full gesture overhaul, experimental iOS support, building directly on your phone via Termux, rootless mod installs — and root fixes for the launch-time layout shift and the last of the phantom-input bugs.
+
+**New: Swipe Only mode (Settings → Game):**
+
+- **Play without buttons.** A new toggle hides the Play Hand/Discard buttons entirely — swipe up plays, swipe down discards — leaving only a compact `Sort | Rank | Suit` strip under the hand and freeing the bottom of the screen for the cards. Gestures are force-enabled in this mode regardless of the `gestures.enabled` config, so the game can never become unplayable.
+- **Applies instantly, anywhere** — menu, shop, or mid-run. The layout flag is session-latched (`G.F_SWIPE_ONLY`) and the toggle is pure layout (button row swap + hand offset), so flipping it never desyncs live animations.
+- Boss-blind code that pokes the play button UIE is nil-guarded for buttonless layouts (`blind.lua`).
+
+**Swipe gesture overhaul (user feedback):**
+
+- **The selection moves together.** While a selected card is touch-dragged vertically, the rest of the highlighted cards visibly lift with it (`group_follow`), so throwing a 5-card flush reads as throwing five cards, not one. Horizontal drags are ignored — drag-to-reorder is untouched.
+- **Slow "carry and release" plays too.** A deliberate vertical drag past the threshold triggers play/discard even when slower than a flick, but only when it started on a selected card — matching what the group-follow animation promises.
+- **Flicking an unselected card no longer throws the selection.** A gesture starting on a hand card requires that card to be highlighted.
+- On a successful flick every highlighted card gets a `juice_up` pop at the same moment.
+
+**New: iOS build (EXPERIMENTAL, testers wanted):**
+
+- **`python build.py --ios` produces a sideloadable `balatro-portrait.ipa`** — no Xcode or macOS needed. The build downloads the prebuilt unsigned LÖVE iOS app shell from [balatro-apk-maker](https://github.com/blake502/balatro-apk-maker)'s Additional Tools (SHA-256 verified, contains no game data), inserts your locally built `Game.love` into `Payload/Balatro.app/`, locks `Info.plist` to portrait orientation, and stamps the mod version. Sideload with Sideloadly or AltStore — see [docs/IOS.md](docs/IOS.md) for the full guide and the list of things we need testers to verify. **Untested by the maintainer** (no iOS device) — please report results either way.
+- **iOS now gets the mobile feature flags.** `globals.lua` only set `F_MOBILE_UI`, `F_VERTICAL_SETTINGS`, `F_HAPTIC` etc. for Android; on iOS the game would have behaved like a desktop build. The engine code was already iOS-safe.
+- Lovely mod support remains Android-only (`liblovely.so`); the IPA is always vanilla.
+
+**New: build on your phone (Termux), mod without root:**
+
+- **Termux support in `build.py`.** The desktop JDK and the apktool jar's bundled aapt binaries are x86-64 only and can't run on ARM64 Android. The script now detects Termux and uses the native toolchain instead (`pkg install python openjdk-17 apktool`) — no PC needed to build the APK.
+- **Mods install without root.** Material Files → *Add storage…* → *External storage* → pick the Balatro app → *Use this folder* exposes `ASET/Mods/` on stock, unrooted devices (method from Lovely Mobile Maker's FAQ, confirmed against this project's builds). [docs/MODDING.md](docs/MODDING.md) now documents all three methods (SAF, root, ADB) with the no-root path as the recommended default.
+
+**Bug Fixes:**
+
+- **The splash screen and main menu no longer drift left until the first touch.** Root cause found via on-device telemetry: the v2.2.0 phantom-touch fix parked the virtual cursor at (-9999, -9999), and the room-shake parallax — which leans the whole ROOM toward the cursor every frame — translated that into a constant ~1.08-unit left shift (scaling with the screenshake setting). The cursor now parks just offscreen at (-100, -100): hover remains impossible before the first touch, while the parallax error drops to an imperceptible ~0.03 units.
+- **The rare "pre-clicked card on launch" is fully closed.** Android occasionally emits synthetic (non-touch) mouse events at boot with a phantom position; one slipping through flipped the controller back into mouse mode. All mouse-flavored events are now ignored on Android/iOS until a real touch has been seen.
+- **Boss debuff alerts no longer run off the screen** (e.g. The Arm's "Decrease level of played poker hand"): portrait popups clamp their max width to the room and shrink to fit.
+- **The boot loading card re-centers on every resize** — Android fires several resizes while the window settles (fullscreen, nav bar), and the card's once-computed position could go stale.
+- **Card-area widths clamp to the room** in `set_screen_positions`, so shelves can never overflow the screen edges regardless of scale settings.
+
+**Notes:**
+
+- `swipe_only.scale_mult` exists in `portrait_config.lua` to scale the whole UI up in Swipe Only mode, but ships disabled (1.0): changing `TILESCALE` mid-session desynced every previously computed position. Enable at your own risk.
+
+## v2.2.0 - 2026-06-10
+
+Mobile gameplay UX overhaul: swipe gestures, a floating hand preview, thumb-sized touch targets, high-refresh-rate support, and root fixes for two long-standing phantom-input bugs that made the game feel like a PC port. Every new behavior is tunable (or can be disabled) from `src/portrait_config.lua`.
+
+**New Features (portrait only):**
+
+- **Swipe gestures — flick up to play, flick down to discard.** A quick vertical flick (under 0.45s, mostly vertical, starting in the lower half of the screen) on selected cards triggers the same `play_cards_from_highlighted`/`discard_cards_from_highlighted` flows as the buttons, with the same guards as `can_play`/`can_discard` (1–5 cards highlighted, `blind.block_play`, discards remaining, no overlay/pause, not mid-play). Slow drags still reorder cards as before. Tune or disable via `PORTRAIT_CONFIG.gestures`.
+- **Floating hand preview above the hand.** While selecting cards, a chip shows the detected poker hand (name, level, chips × mult) right above the hand — no more eye travel to the HUD at the top of the screen on every tap. The values are live `DynaText`/`ref_table` bindings to `G.GAME.current_round.current_hand`, so they always match the HUD. The chip pops (`juice_up` + text pulse) when it appears or when the detected hand changes, hides outside `SELECTING_HAND`, and is removed in `Game:delete_run`. Configure via `PORTRAIT_CONFIG.hand_preview`.
+- **High refresh rate.** `fps_cap = 'auto'` (new default) reads the display's refresh rate from `love.window.getMode` and caps there, so 90/120 Hz phones run at native refresh instead of 60. Set a number to pin it.
+- **Visible empty joker/consumable slots.** Empty slots in the joker and consumable shelves draw faint rounded outlines (under the cards), so the top of the screen reads as reserved capacity instead of dead felt. Configure via `PORTRAIT_CONFIG.joker_slots`.
+- **Experimental: `deck_position = 'bottom_right'`** moves the deck next to the hand instead of the top shelf. Default remains `'shelf'`.
+
+**UI/UX Improvements (portrait only):**
+
+- **Played cards now land center-stage.** The play area centers in the gap between the joker shelf and the hand (accounting for the hand's 3-unit slide while selecting) instead of hugging the hand and leaving the middle of the screen empty.
+- **Bigger scoring feedback.** Floating score/attention popups during play are scaled 1.3× (`score_text_mult`).
+- **Thumb-sized touch targets.** The Use/Sell buttons on highlighted cards are scaled 1.4× (`mobile_ui.card_button_mult`) — they were PC-sized and genuinely below Android's recommended minimum touch target. Run Info/Options were resized to 1.95×0.78 units.
+- **Quieter chrome.** Run Info/Options are now compact single-row grey buttons, so red stays reserved for Discard and gameplay actions.
+- **Readable counters.** The card-count labels (deck 44/52, jokers 1/5, hand 8/8) scale up from 0.3 to 0.42 in portrait.
+
+**Bug Fixes:**
+
+- **Cards/buttons no longer come up "pre-touched" on launch.** The controller's HID flags default to mouse mode, so before the first touch the game polled `love.mouse.getPosition()` every frame — which reports a phantom position on Android — and hover-selected whatever sat under it: a shop joker with its tooltip open on launch, the Reroll button rendering pressed. On Android/iOS the controller now starts in touch mode with the cursor parked offscreen (`engine/controller.lua`), and nothing can hover until a real touch arrives. Desktop behavior is unchanged.
+- **Touch tilt warp, root fix.** v2.1.2 clamped the cursor distance fed to the 3D tilt shader; this release goes further: on portrait touch the cursor-lean `hovering` uniform is zeroed entirely (`disable_touch_tilt`, default on), making the sheared-parallelogram warp impossible. Scripted tilt animations (`tilt_var`, e.g. the title screen) are unaffected, and desktop keeps full tilt.
+
+**Build & Tooling:**
+
+- **SHA-256 verification for all version-pinned downloads** (JDK, apktool, uber-apk-signer, APK patch, LÖVE base APK). A mismatch deletes the file and aborts the build. The LMM base APK is rebuilt upstream without versioned URLs, so it can't be pinned — noted inline.
+- **CI on GitHub Actions:** LuaJIT syntax check over all of `src/`, `py_compile` on the build script, and a Game.love packaging smoke test (no game files in CI — packaging `src/` alone catches path bugs and patch-target drift).
+- **`argparse` CLI** replaces the hand-rolled flag parser; unknown flags now error instead of being silently ignored.
+- **Mod version in the APK:** `MOD_VERSION` is injected into `android:versionName`, replacing the hardcoded `1.0.0n-FULL-p1`.
+- **Licensing clarified:** MIT license for the build tooling and portrait modifications, with an explicit scope note that all Balatro game code and assets remain LocalThunk/Playstack's (see `LICENSE`).
+- **Docs:** `docs/MODDING.md` updated to the unified `build.py` (was still referencing `build_apk.py`); `requirements.txt` removed (stdlib only); this CHANGELOG introduced.
+
+## v2.1.2 - 2026-05-29
+
+Hotfix for a portrait/touch-only visual glitch where cards would randomly shear into a warped parallelogram.
+
+**Bug Fix:**
+
+- **Attempt to fix cards randomly warping into a sheared parallelogram on touch.** The 3D tilt shader (`src/engine/sprite.lua:93-98`) leans a card toward `mouse_screen_pos`, with the shear proportional to the distance between the card centre and that point. `Card:draw` (`src/card.lua:4408-4413`) feeds it `G.CONTROLLER.cursor_position` directly. On desktop the cursor sits on the hovered card so the lean is subtle; on touch `cursor_position` stays pinned to the last touch point (`src/engine/controller.lua:178`), and a card can enter hover/focus while that point is far away — during dealing, or when a canvas refresh/`love.resize` changes `G.TILESCALE` while the cursor is still in old coordinates — so the distance blows up and the card shears off, which is why it looked random. The virtual cursor that drives the tilt is now clamped to within one card extent of the card's own centre, using the same screen-space formula as the ambient tilt path. Desktop hovering already sits inside that range, so the clamp never triggers and vanilla behavior is unchanged.
+
+No vanilla-only changes in this release.
+
+## v2.1.1 - 2026-05-17
+
+Hotfix for a SteamModded-only crash that hit whenever a debuffed card scored.
+
+**Bug Fix:**
+
+- **Game no longer crashes when a debuffed card scores under SteamModded.** `SMODS.juice_up_blind` (in `src/utils.lua:256`) looks up the HUD's debuff container via `G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff')`. Our portrait HUD had ids on the inner text nodes (`HUD_blind_debuff_1`, `HUD_blind_debuff_2`) but no id on the wrapper row, so the lookup returned `nil` and SMODS crashed indexing `ui_elem.children`. The matching SMODS lovely regex patch only fires on the vanilla landscape structure (specific scales/paddings/dimensions); our portrait HUD uses different values, so the id never got injected. The wrapper now carries `id = 'HUD_blind_debuff'` directly. Vanilla behavior is unchanged — nothing in the base game queries this id.
+
+No vanilla-only changes in this release.
+
+## v2.1.0 - 2026-05-14
+
+This release makes the portrait mobile port work end-to-end with [Steamodded](https://github.com/Steamodded/smods) (`smods-1.0.0-beta-0711a`) without crashes or visual regressions, and fixes a portrait-only layout bug where the boss panel ballooned vertically when rerolled. All SteamModded fixes are no-ops when SteamModded isn't loaded — vanilla portrait behavior is unchanged.
+
+**Bug Fixes (portrait, vanilla):**
+
+- **Boss reroll no longer balloons in portrait mode.** Reroll Boss tag (and the `v_directors_cut`/`v_retcon` $10 reroll button) rebuilt the boss UIBox through `UIBox_dyn_container`, which hardcodes `minh = 30` and landscape paddings. The rerolled boss panel now uses the same triple-row wrapper as `compact_blind_choice`, with portrait-aware paddings and no `minh` constraint, so the panel stays in place at its original size.
+
+**SteamModded Compatibility:**
+
+- **Build pipeline normalizes packaged Lua files to LF.** Lovely-injector's regex patches anchor on `\n`; Windows checkouts ship CRLF, which made several SMODS regex patches silently fail and leave behind dangling code that crashed with `ambiguous syntax (function call x new statement)` at runtime.
+- **Game no longer crashes at run start with SMODS loaded.** SMODS's overridden `G.FUNCS.HUD_blind_debuff` asserts `G.HUD_blind == e.UIBox`, which failed when `engine/ui.lua`'s init-time func dispatch ran on the HUD's text nodes before the assignment landed. The HUD debuff text nodes now get their `func` attached after `self.HUD_blind = UIBox{...}` returns.
+- **HUD debuff lines no longer crash mid-run.** SMODS's override of `HUD_blind_debuff` expects a container with child rows and calls `set_parent_child` on the node; on text nodes this added children whose `T` field never got initialized (`calculate_xywh` doesn't recurse into text-node children), which crashed `set_wh` with `attempt to index field 'T' (a nil value)`. The portrait HUD text nodes now reference a dedicated `portrait_HUD_blind_debuff` alias that SMODS doesn't override.
+- **Blind info no longer disappears from the top-left HUD when SMODS is loaded.** SMODS injects a `row_blind_bottom` spacer into the landscape `row_blind` pattern and reanchors HUD_blind to it; our portrait `row_blind` is a different node shape, so the injection silently skipped it and left HUD_blind anchored to nothing. The portrait `row_blind` now ships the spacer itself.
+
+**Other:**
+
+- Removed `changelog.txt`. Release notes live on the Releases page going forward.
+
+## v2.0.0 - 2026-05-02
+
+This is the biggest portrait/mobile pass since 1.9.6. It focuses on readability, touch behavior, tooltip placement, and a more mobile-native layout across the run, shop, blind-select, and setup screens.
+
+**Highlights:**
+
+- Reworked the portrait HUD so round score, current hand, money, hands, discards, ante, round, and boss blind information use the top area more intelligently.
+- Made boss blind panels more compact in-game so long boss text such as The Hook no longer overlaps the Hands/Discards row.
+- Rebalanced blind-select cards for mobile readability, including larger critical values, tighter padding, and better use of the available vertical space.
+- Reworked the shop layout for portrait so jokers, vouchers, packs, reroll, and next-round controls fit more naturally without accidentally enlarging the shop sign.
+- Improved main menu positioning so the Play/Options/Quit/Collection stack and profile/language buttons sit higher and avoid bottom-edge clipping.
+- Improved New Run deck selection readability; Magic Deck, Green Deck, and other deck descriptions now scale into their description panel.
+
+**Tooltip and Touch Fixes:**
+
+- Tooltips now dynamically stay inside the visible screen instead of clipping off the left or right edge.
+- Long-press tooltips are moved higher so they are not hidden directly under the player's finger.
+- Tooltip fitting now applies broadly to cards, jokers, tarot/planet/spectral cards, tags, and side info popups.
+- Disabled dragging/collision on portrait tooltips to prevent long-press and swipe from moving tooltip text around.
+- Fixed skipped/finished blind tag popups drifting upward or flying away after repeated presses.
+- Fixed boss reroll/blind-select alignment so rerolled bosses start from the existing slot instead of snapping from a zero-size position.
+
+**Bug Fixes:**
+
+- Fixed the CRT edge/eclipse effect staying visible at low CRT slider values. The CRT edge mask now follows the CRT slider intensity instead of always applying at full strength. This addresses #22.
+- Fixed rare Android touch launches where input could stop responding until the app was restarted by tracking touch coordinates from touch events instead of relying on stale mouse coordinates.
+- Fixed hand-card spacing so larger mobile cards clamp to the usable screen width instead of spilling off-screen.
+- Fixed profile/language UI cleanup when returning to the main menu or deleting a run.
+- Fixed run setup deck description refresh so cycled decks keep the mobile-scaled layout.
+
+**Build System:**
+
+- Default build profile is now: CRT-disabling patch off, Readabletro on, Lovely mod support off.
+- Build prompts now work better in non-interactive environments by falling back to saved/default answers on EOF.
+- Added a build-time CRT shader mask patch so generated Balatro resources get the slider-aware CRT edge fix automatically.
+- Included PR #21: macOS users can pass the Balatro `.app` bundle path and the build script will auto-detect `Contents/Resources/Balatro.love`.
+- Updated README build defaults and macOS path examples.
+
+**Technical Notes:**
+
+- Added shared portrait tooltip fit helpers in `portrait_config.lua`.
+- Added `UIBox:fit_to_room()` and popup snap-to-fit support for portrait UI.
+- Centralized many mobile HUD, blind-select, shop, run-setup, and main-menu dimensions in `PORTRAIT_CONFIG.mobile_ui`.
+- Added event-driven Android touch position tracking in `main.lua` and `controller.lua`.
+
+
+## v1.9.6 - 2026-05-01
+
+**Bug Fixes:**
+
+- Fixed bottom-edge rendering artifact in portrait mode on tall phones (canvas wrap mode + screen clear before canvas draw).
+- Fixed Windows console encoding error in build time report.
+
+**Improvements:**
+
+- Merged all build scripts (`setup.py`, `rebuild_game.py`, `build_apk.py`) into a single `build.py`.
+- Removed `game_original_files/` from the repository (auto-generated from your Balatro copy, not meant to be committed).
+- Cleaned up `.gitignore`.
+- Updated README with clearer build instructions and troubleshooting.
+
+**CRT Shader:** Remains enabled by default. Users experiencing a black ellipse or colored sliver can rebuild with the CRT patch: `python build.py --crt`
+
+## v1.9.5 - 2026-04-26
+
+Bug Fixes:
+- Fixed portrait tutorial progression after shop and Big Blind.
+- Fixed tutorial bubble positioning in portrait.
+- Fixed portrait main menu and round-end layout alignment.
+
+## v1.9.4 - 2026-04-22
+
+Bug Fixes:
+
+- Fixed tutorial Next button and hand-info progression issues in portrait mode.
+- Fixed tutorial hand-info follow-up dialogue positioning so Jimbo stays visible.
+- Fixed a tutorial overlay nil crash during tutorial event cleanup.
+
+## v1.9.3h - 2026-04-22
+
+Fixed tutorial dialogue in portrait mode so the Next button is anchored below Jimbo's speech bubble instead of covering the text.
+
+## v1.9.3 - 2026-04-21
+
+Bug Fixes:
+
+- Fixed Android profile rename keyboard not appearing in portrait mode.
+- Fixed text input crash when typing from the Android virtual keyboard.
+- Fixed duplicate character input while renaming profiles on Android.
+- Removed Android-wide touch haptic spam so haptics stay tied to card interactions.
+
+
+## v1.9.2 - 2026-04-20
+
+Bug Fixes:
+
+- Fixed the Haptic Feedback toggle so disabling it now shuts off Android vibration paths instead of leaving some haptics active.
+- Restored Android haptics for card movement sounds, including the card draw/deck animation path (cardSlide1, cardSlide2, card1, cardFan2).
+- Restored stronger action haptics on Android while keeping the settings toggle behavior correct.
+- Added light haptics for toggle presses and option-cycle changes to improve UI feedback.
+
+Technical Notes:
+
+- Unified haptic gating in src/globals.lua.
+- Gated Android sound-driven vibration in src/functions/misc_functions.lua.
+- Gated controller rumble on Android in src/functions/common_events.lua.
+- Wired the settings toggle callback in src/functions/UI_definitions.lua.
+- Added UI interaction haptics in src/functions/button_callbacks.lua.
+
+
+## v1.9.1 - 2026-04-08
+
+Bug Fixes:
+- Fixed black bar appearing at bottom of screen after locking/unlocking phone during gameplay. Canvas now fully refreshes on resume via love.visible + love.draw size mismatch detection.
+- Fixed crash log not copying to clipboard. Crash screen now stays open until BACK/ESC is pressed. Font fallback chain added.
+- Fixed tooltips overflowing screen edges in portrait mode. Tooltips now dynamically flip anchor direction based on card position.
+- Fixed tutorial speech bubble rendering too high in portrait mode. Bubble now positions below Jimbo.
+- Fixed syntax error in common_events.lua preventing game launch.
+
+Removed:
+- Removed pinch-to-zoom feature (caused layout glitches and served no practical purpose).
+
+
+## v1.9.0 - 2026-04-08
+
+Centralized Configuration:
+- Created portrait_config.lua: all scattered magic numbers (scale factors, margins, offsets, thresholds) now live in a single config table.
+- Dynamic aspect ratio scaling via get_portrait_scale(): adapts to phone (0.63), tall phone (0.58), tablet (0.70-0.80) automatically.
+
+Crash Reporting:
+- Crash log is now automatically copied to clipboard on crash (love.system.setClipboardText).
+- Crash log is saved to crash_log.txt file on disk.
+- Crash screen stays open until user presses BACK or ESC. No more auto-closing.
+- Font fallback chain: TypoQuik-Bold -> m6x11plus -> system default.
+
+Input Improvements:
+- Pinch-to-zoom: two-finger gesture scales the game view in real time (range 2.0-8.0).
+- Android back button: opens options menu during gameplay, closes overlay menus.
+- Touch cursor sync: force controller cursor to exact tap position for accurate hit-testing.
+
+Display and Layout:
+- Immersive mode: hides system bars for full-screen gaming on Android.
+- Keep screen alive: prevents display sleep during gameplay.
+- Adaptive HUD: vertical HUD scale adjusts 0.35-0.45 based on screen aspect ratio.
+- Smart tooltip anchoring: tooltips dynamically flip direction (above/below) based on card position and shift horizontally to stay within screen bounds.
+- Tutorial speech bubble repositioned for portrait mode: shows below Jimbo instead of above, moved lower on screen.
+
+Bug Fixes:
+- Discard off-screen bug: changed from hardcoded +15 offset to relative positioning from play area.
+- Landscape resize black screen: canvas now updates even when landscape resize events are ignored on mobile.
+- Readabletro patch FileNotFoundError: destination directories are now created with os.makedirs before copying.
+- Build script .bak restore issue: backup files are always recreated from current source, preventing stale backups from reverting changes.
+
+Build System:
+- Incremental builds: file hash caching in .build_cache.json, skips rebuild if no source changes detected.
+- Sequential downloads: replaced parallel downloads with reliable sequential transfers using urllib with 120s timeout.
+- Build profiler with per-step timing report.
+- Download progress bars use ASCII-safe characters for Windows console compatibility.
+- build.py now checks for src/resources existence (not just src/) before prompting for setup.
+
+Settings:
+- Portrait-specific haptic toggle added to Game settings tab.
+- FPS cap configurable via portrait_config.fps_cap (default 60 on mobile).
+
+
+## v1.8.5 - 2026-04-06
+
+Major Additions:
+- Haptic Feedback Engine: Added comprehensive haptic feedback (vibrations) on Android devices for tapping buttons, purchasing items, playing cards, opening packs, and rerolling the shop.
+- Engine Optimization: Hardcoded an FPS cap tailored for mobile (60 FPS limit on iOS/Android). This resolves previous battery drain and thermal overheating issues caused by the default 500 FPS behavior.
+- Suspended State Auto-Save: Implemented an active state listener. The game now automatically triggers a background save whenever the application loses focus, preventing data loss.
+- Layout Safe Area: Shifted the portrait HUD down symmetrically to clear front-camera notches and cutouts present on modern hardware.
+- Anti-Jitter Touch Deadzones: Added a movement threshold to prevent the game from accidentally confusing brief card taps with drag movements on highly sensitive touch screens.
+
+Bug Fixes & Refinements:
+- Readabletro Textures Fix: Corrected the texture replacement logic within the build script. The high-resolution 2x Readabletro textures will now correctly apply and replace the vanilla assets upon building.
+- Build Automation: The build.py script now supports saved configurations (.buildconfig.json). Users will no longer be asked redundant setup questions on subsequent builds, and the CRT disable patch now defaults to false.
+
+Note: For the haptic features and optimized builds to apply, please rebuild your APK using the updated scripts.
+
+## v1.8.0 - 2026-04-06
+
+- Added native support for Readabletro typography and shaders.
+- Users are now prompted to apply the Readabletro mod during rebuild_game.py allowing for significantly better text scaling and readability on mobile devices.
+- Modified the Readabletro PC shaders to be completely compatible with Android OpenGL ES, fixing the background crashes occurring on some devices. 
+
+Bug Fixes:
+- Improved internal build scripts to handle temporary patches via `.bak` restoration seamlessly, keeping the repo clean.
+
+## v1.7.0 - 2026-04-06
+
+### Lovely Mod Support
+Balatro Portrait Mobile now supports the [Lovely](https://github.com/ethangreen-dev/lovely-injector) runtime Lua injector for loading mods on Android.
+
+> ⚠️ **Root Required**: Installing mods requires a **rooted Android device** (e.g. via [Magisk](https://github.com/topjohnwu/Magisk)). The mod directory is located in the root filesystem (`/data/user/0/`), which is not accessible without root privileges.
+
+### How to Build with Mods
+
+```
+python rebuild_game.py
+python build_apk.py --with-lovely
+```
+
+Or answer **yes** when prompted during `build_apk.py`.
+
+### Installing Mods
+
+1. Build and install the Lovely-enabled APK
+2. Launch the game once
+3. Install [Material Files](https://play.google.com/store/apps/details?id=me.zhanghai.android.files)
+4. Navigate to: `/data/user/0/com.unofficial.balatro/files/save/ASET/Mods/`
+5. Place your mod folders there
+6. Restart the game
+
+> ⚠️ The mod directory is in the **root filesystem** (`/`), not in `Android/data/`. Use Material Files to navigate from `/`.
+
+See [docs/MODDING.md](docs/MODDING.md) for detailed instructions.
+
+### Technical Changes
+- Lovely injector embedded via [LMM](https://github.com/WilsontheWolf/lovely-mobile-maker) base APK
+- LMM manifest preserved in-place (prevents AndroidX/provider crashes)
+- Smali patches skipped in Lovely mode (preserves native Lovely initialization)
+- Package name: `com.unofficial.balatro`
+- CLI flags: `--with-lovely` / `--no-lovely` for CI/automation
+- APK built as debuggable for ADB mod access
+
+
+## v1.6.0 - 2026-03-07
+
+- Added dynamic Left/Right Hand layouts
+- Customizable Run Info / Options button positioning
+- Visual and UI alignment fixes
+- Source code release
+
+## v1.5.0 - 2026-03-07
+
+- Full portrait mode layout on all screens
+- MacOS compatibility and removed 7-zip requirement
+- Fixed blind selection visual states in portrait mode
+- Source code release
+
+## v1.4.0 - 2026-02-04
+
+### Game Over Screen
+- **Portrait layout redesigned**
+  - Jimbo repositioned at bottom (stats at top)
+  - Vertical single-column layout instead of horizontal two-column
+  - Speech bubble now fits properly on screen
+  - Smaller Jimbo sprite to save space
+
+### Lock Screen Resize Issue
+- **Fixed black bar appearing after unlocking phone** (Issue #1)
+  - Added viewport/scissor reset in resize handler
+  - Overlay menu recreation on resize events
+  - Proper canvas scaling on orientation changes
+
+## Changelog
+- **Fixed:** Game Over screen layout for portrait mode
+- **Fixed:** Black bar issue when locking/unlocking device
+- **Improved:** Resize handling for better Android compatibility
+
+---
+
+
+## v1.3.0 - 2026-02-04
+
+### CRT Shader Fix
+- Added interactive CRT patch option during build
+- When running `rebuild_game.py`, you will be asked if you want to apply the CRT patch
+- This fixes the **black ellipse visual artifact** some users experience (Issue #3)
+
+### How to Use
+1. Run `python rebuild_game.py`
+2. When asked about CRT patch:
+   - Answer **yes** if you see a black ellipse on screen
+   - Answer **no** if your game works fine
+3. Run `python build_apk.py`
+
+### Changelog
+- Added CRT shader disable option during build
+- Fixed black ellipse visual artifact on some devices
+- Updated README with troubleshooting guide
+
+## v1.0.4-experimental - 2026-02-04
+
+This is a test build to fix issue #3 (black ellipse visual artifact).
+
+### Changes
+- Disabled CRT shader in portrait mode to fix black ellipse visual artifact
+
+### Testing Needed
+Please test and report if the visual artifact issue is resolved.
+
+**Note:** This is an experimental build.
+
+## v1.2.0 - 2026-01-30
+
+### Cross-Platform Support
+-  **Windows Support**: Build scripts now work on Windows
+-  **Linux Support**: Continues to work on Linux
+-  **Auto-Detection**: Scripts automatically detect your OS
+
+### New Features
+-  Added `setup.py` for automated game file extraction
+-  Added `requirements.txt` (stdlib only, no dependencies!)
+-  Simplified README with unified instructions
+
+### Build Script Fixes
+-  Fixed JDK download (Windows .zip, Linux .tar.gz)
+-  Fixed Java path detection (java.exe on Windows)
+-  Fixed file extraction (zipfile on Windows, tarfile on Linux)
+
+---
+
+>  **Important**
+> You need to own a legal copy of **Balatro** to use this mod.
+
+See the README for build instructions.
+
+
+## v1.1.0 - 2026-01-11
+
+### UI Changes
+- ✅ Fixed black bar at top of screen
+- ✅ Reduced blind panel icon size for portrait mode (~23% smaller)
+- ✅ Repositioned deck, consumables, and jokers for better layout
+- ✅ Improved HUD positioning
+
+### Build Improvements
+- 📦 Added `rebuild_game.py` for easy Game.love creation
+- 📝 Created `game_original_files/` placeholder with clear instructions
+- 📖 Updated README with step-by-step build guide
+- 🔧 Better error handling in build scripts
+
+### Bug Fixes
+- 🐛 Fixed consumables and jokers overlapping
+- 🐛 Fixed touch input handling for Android
+- 🐛 Fixed portrait mode resize handling
+
+---
+
+## ⚠️ Important
+
+You need to own a legal copy of **Balatro** to use this mod.
+
+See the README for build instructions.
+
+---
+
+
+## 1.0a - 2026-01-02
+
+First stable release with Left Stack Layout (Source Only).

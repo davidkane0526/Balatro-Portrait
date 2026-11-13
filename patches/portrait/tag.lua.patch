@@ -1,0 +1,69 @@
+--- a/tag.lua
++++ b/tag.lua
+@@ -523,7 +523,17 @@
+ 
+                 self:get_uibox_table(tag_sprite)
+                 _self.config.h_popup =  G.UIDEF.card_h_popup(_self)
+-                _self.config.h_popup_config ={align = 'cl', offset = {x=-0.1,y=0},parent = _self}
++                
++                -- Sets dynamic popup alignment based on screen orientation and hand setting
++                if G.F_PORTRAIT and get_portrait_top_popup_config then
++                    -- Edge-aware: pulls the tooltip back on-screen when the tag
++                    -- sits near the left/right edge instead of overflowing.
++                    _self.config.h_popup_config = get_portrait_top_popup_config(_self)
++                else
++                    -- Original landscape configuration
++                    _self.config.h_popup_config ={align = 'cl', offset = {x=-0.1,y=0},parent = _self}
++                end
++                
+                 Node.hover(_self)
+                 if _self.children.alert then 
+                     _self.children.alert:remove()
+@@ -536,6 +546,18 @@
+     end
+     tag_sprite.stop_hover = function(_self) _self.hovering = false; Node.stop_hover(_self); _self.hover_tilt = 0 end
+ 
++    -- Re-fit the hover tooltip every frame while it exists, mirroring Card:move.
++    -- A tag's popup was only fitted once at hover time, before its width was laid
++    -- out, so a tag near the screen edge kept a stale position and overflowed.
++    -- Clamping each frame uses the real measured width and keeps it on-screen.
++    local _tag_sprite_move = tag_sprite.move
++    tag_sprite.move = function(_self, dt)
++        _tag_sprite_move(_self, dt)
++        if G.F_PORTRAIT and _self.children and _self.children.h_popup and prepare_portrait_popup_fit then
++            prepare_portrait_popup_fit(_self.children.h_popup)
++        end
++    end
++
+     tag_sprite:juice_up()
+     self.tag_sprite = tag_sprite
+ 
+@@ -578,10 +600,18 @@
+     if HUD_tag_key then 
+         if G.HUD_tags and G.HUD_tags[HUD_tag_key+1] then
+             if HUD_tag_key == 1 then
+-                G.HUD_tags[HUD_tag_key+1]:set_alignment({type = 'bri',
+-                offset = {x=0.7,y=0},
+-                xy_bond = 'Weak',
+-                major = G.ROOM_ATTACH})
++                if G.F_PORTRAIT then
++                    local first_tag_align, first_tag_offset = get_portrait_first_tag_align()
++                    G.HUD_tags[HUD_tag_key+1]:set_alignment({type = first_tag_align,
++                    offset = first_tag_offset,
++                    xy_bond = 'Weak',
++                    major = G.jokers})
++                else
++                    G.HUD_tags[HUD_tag_key+1]:set_alignment({type = 'bri',
++                    offset = {x=0.7,y=0},
++                    xy_bond = 'Weak',
++                    major = G.ROOM_ATTACH})
++                end
+             else
+                 G.HUD_tags[HUD_tag_key+1]:set_role({
+                 xy_bond = 'Weak',
+@@ -592,4 +622,5 @@
+     end
+ 
+     self.HUD_tag:remove()
++    if G.F_PORTRAIT then portrait_arrange_tags() end
+ end

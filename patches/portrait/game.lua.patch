@@ -1,0 +1,352 @@
+--- a/game.lua
++++ b/game.lua
+@@ -14,7 +14,7 @@
+     local settings_ver = nil
+     if settings then 
+         local settings_file = STR_UNPACK(settings)
+-        if G.VERSION >= '1.0.0' and (love.system.getOS() == 'NOPE') and ((not settings_file.version) or (settings_file.version < '1.0.0')) then 
++        if version_gte(G.VERSION, '1.0.0') and ((not settings_file.version) or version_lt(settings_file.version, '1.0.0')) then 
+             for i = 1, 3 do
+                 love.filesystem.remove(i..'/'..'profile.jkr')
+                 love.filesystem.remove(i..'/'..'save.jkr')
+@@ -28,7 +28,7 @@
+             self.SETTINGS.profile = 1
+             self.SETTINGS.tutorial_progress = nil
+         else 
+-            if G.VERSION < '1.0.0' then 
++            if version_lt(G.VERSION, '1.0.0') then 
+                 settings_ver = settings_file.version
+             end
+             for k, v in pairs(settings_file) do
+@@ -39,6 +39,11 @@
+     self.SETTINGS.version = settings_ver or G.VERSION
+     self.SETTINGS.paused = nil
+ 
++    --Latch Swipe Only mode for this session. The flag is read by layout code
++    --(portrait scale, hand offset, button row) and must never change while a
++    --stage is live — mid-session toggles re-latch in prep_stage instead.
++    self.F_SWIPE_ONLY = not not self.SETTINGS.swipe_only_mode
++
+     local new_colour_proto = self.C["SO_"..(self.SETTINGS.colourblind_option and 2 or 1)]
+     self.C.SUITS.Hearts = new_colour_proto.Hearts
+     self.C.SUITS.Diamonds = new_colour_proto.Diamonds
+@@ -130,7 +135,41 @@
+         local extension = string.sub(filename, -3)
+         if extension == '.fs' then
+             local shader_name = string.sub(filename, 1, -4)
+-            self.SHADERS[shader_name] = love.graphics.newShader("resources/shaders/"..filename)
++            -- Prefer injected portrait shader rules at runtime; fall back to
++            -- bundled files for the normal build.py path. The Zygisk module
++            -- ships only shaders it owns (Readabletro replacements) plus
++            -- find/replace rules for the game's shaders, which are read from
++            -- the installed APK here instead of being redistributed in the
++            -- module. A rule's optional guard makes insertion-shaped patches
++            -- idempotent (skip when the replacement is already in place);
++            -- uncomment-shaped patches carry no guard on purpose, since their
++            -- replacement text is a substring of the commented original.
++            local shader_source
++            local ok, portrait_shaders = pcall(require, "portrait_shaders")
++            if ok and type(portrait_shaders) == "table" then
++                if portrait_shaders.replace and portrait_shaders.replace[filename] then
++                    shader_source = portrait_shaders.replace[filename]
++                elseif portrait_shaders.patches and portrait_shaders.patches[filename] then
++                    local src = love.filesystem.read("resources/shaders/"..filename)
++                    if src then
++                        src = src:gsub("\r\n", "\n")
++                        for _, rule in ipairs(portrait_shaders.patches[filename]) do
++                            if not (rule.guard and src:find(rule.guard, 1, true)) then
++                                local s, e = src:find(rule.find, 1, true)
++                                if s then
++                                    src = src:sub(1, s - 1) .. rule.replace .. src:sub(e + 1)
++                                end
++                            end
++                        end
++                        shader_source = src
++                    end
++                end
++            end
++            if shader_source then
++                self.SHADERS[shader_name] = love.graphics.newShader(shader_source)
++            else
++                self.SHADERS[shader_name] = love.graphics.newShader("resources/shaders/"..filename)
++            end
+         end
+     end
+ 
+@@ -1151,12 +1190,16 @@
+         if self.blind_select then self.blind_select:remove(); self.blind_select = nil end
+         if self.booster_pack then self.booster_pack:remove(); self.booster_pack = nil end
+         if self.MAIN_MENU_UI then self.MAIN_MENU_UI:remove(); self.MAIN_MENU_UI = nil end
++        if self.PROFILE_BUTTON then self.PROFILE_BUTTON:remove(); self.PROFILE_BUTTON = nil end
++        if self.LANGUAGE_BUTTON then self.LANGUAGE_BUTTON:remove(); self.LANGUAGE_BUTTON = nil end
+         if self.SPLASH_FRONT then self.SPLASH_FRONT:remove(); self.SPLASH_FRONT = nil end
+         if self.SPLASH_BACK then self.SPLASH_BACK:remove(); self.SPLASH_BACK = nil end
+         if self.SPLASH_LOGO then self.SPLASH_LOGO:remove(); self.SPLASH_LOGO = nil end
+         if self.GAME_OVER_UI then self.GAME_OVER_UI:remove(); self.GAME_OVER_UI = nil end
+         if self.collection_alert then self.collection_alert:remove(); self.collection_alert = nil end
+         if self.HUD then self.HUD:remove(); self.HUD = nil end
++        if self.hand_preview then self.hand_preview:remove(); self.hand_preview = nil end
++        portrait_remove_dock()
+         if self.HUD_blind then self.HUD_blind:remove(); self.HUD_blind = nil end
+         if self.HUD_tags then
+             for k, v in pairs(self.HUD_tags) do
+@@ -1246,6 +1289,10 @@
+     self.STATE_COMPLETE = false
+     self.SETTINGS.paused = false
+ 
++    --Stage transition is the safe moment to apply a Swipe Only toggle made
++    --mid-run: everything below (ROOM, resize, layouts) is rebuilt from scratch.
++    self.F_SWIPE_ONLY = not not self.SETTINGS.swipe_only_mode
++
+     self.ROOM = Node{T={
+         x = self.ROOM_PADDING_W,
+         y = self.ROOM_PADDING_H,
+@@ -1431,6 +1478,10 @@
+                 SC.states.drag.can = false
+                 SC.states.hover.can = false
+                 SC.no_ui = true
++                --Android fires several resizes during the first seconds of boot
++                --(fullscreen/nav-bar settling); the card's position is computed
++                --once, so love.resize re-centers it via this ref until it dissolves.
++                G.boot_loading_card = SC
+                 G.VIBRATION = G.VIBRATION + 2
+                 play_sound('whoosh1', 0.7, 0.2)
+                 play_sound('introPad1', 0.704, 0.6)
+@@ -1576,10 +1627,14 @@
+         CAI.TITLE_TOP_W,CAI.TITLE_TOP_H,
+         {card_limit = 1, type = 'title'})
+ 
+-    
++    local SC_scale_splash = 13*SC_scale
++    if G.F_PORTRAIT then
++        SC_scale_splash = 10*SC_scale
++    end
++
+     G.SPLASH_LOGO = Sprite(0, 0, 
+-        13*SC_scale, 
+-        13*SC_scale*(G.ASSET_ATLAS["balatro"].py/G.ASSET_ATLAS["balatro"].px),
++        SC_scale_splash, 
++        SC_scale_splash*(G.ASSET_ATLAS["balatro"].py/G.ASSET_ATLAS["balatro"].px),
+         G.ASSET_ATLAS["balatro"], {x=0,y=0})
+ 
+     G.SPLASH_LOGO:set_alignment({
+@@ -1595,8 +1650,12 @@
+     G.SPLASH_LOGO.dissolve_colours = {G.C.WHITE, G.C.WHITE}
+     G.SPLASH_LOGO.dissolve = 1   
+ 
++    local mult = 1.2
++    if G.F_PORTRAIT then
++        mult = 0.9
++    end
+ 
+-    local replace_card = Card(self.title_top.T.x, self.title_top.T.y, 1.2*G.CARD_W*SC_scale, 1.2*G.CARD_H*SC_scale, G.P_CARDS.S_A, G.P_CENTERS.c_base)
++    local replace_card = Card(self.title_top.T.x, self.title_top.T.y, mult*G.CARD_W*SC_scale, mult*G.CARD_H*SC_scale, G.P_CARDS.S_A, G.P_CENTERS.c_base)
+     self.title_top:emplace(replace_card)
+ 
+     replace_card.states.visible = false
+@@ -1703,13 +1762,20 @@
+         end
+       }))
+ 
++    local align_version = "tri"
++    local offset_version = 0
++    if G.F_PORTRAIT then
++        align_version = "tli"
++        offset_version = 0.6
++    end
++
+     --VERSION
+     UIBox{
+         definition = 
+         {n=G.UIT.ROOT, config={align = "cm", colour = G.C.UI.TRANSPARENT_DARK}, nodes={
+             {n=G.UIT.T, config={text = G.VERSION, scale = 0.3, colour = G.C.UI.TEXT_LIGHT}}
+         }}, 
+-        config = {align="tri", offset = {x=0,y=0}, major = G.ROOM_ATTACH, bond = 'Weak'}
++        config = {align=align_version, offset = {x=offset_version,y=offset_version}, major = G.ROOM_ATTACH, bond = 'Weak'}
+     }
+ end
+ 
+@@ -2037,6 +2103,10 @@
+     local selected_back = saveTable and saveTable.BACK.name or (args.challenge and args.challenge.deck and args.challenge.deck.type) or (self.GAME.viewed_back and self.GAME.viewed_back.name) or self.GAME.selected_back and self.GAME.selected_back.name or 'Red Deck'
+     selected_back = get_deck_from_name(selected_back)
+     self.GAME = saveTable and saveTable.GAME or self:init_game_object()
++    self.GAME.starting_params = self.GAME.starting_params or get_starting_params()
++    self.GAME.starting_params.play_limit = self.GAME.starting_params.play_limit or 5
++    self.GAME.starting_params.discard_limit = self.GAME.starting_params.discard_limit or 5
++    self.GAME.starting_params.no_limit = self.GAME.starting_params.no_limit or ''
+     self.GAME.modifiers = self.GAME.modifiers or {}
+     self.GAME.stake = args.stake or self.GAME.stake or 1
+     self.GAME.STOP_USE = 0
+@@ -2265,7 +2335,12 @@
+ 
+     set_screen_positions()
+ 
+-    G.SPLASH_BACK = Sprite(-30, -6, G.ROOM.T.w+60, G.ROOM.T.h+12, G.ASSET_ATLAS["ui_1"], {x = 2, y = 0})
++    -- Same +22 vertical margin as the menu splash. This one is centered on
++    -- G.play (the swirl tracks the play area), which sits above the room's
++    -- midpoint, so the old +12 margin left the felt 0.7 tiles short of the
++    -- physical top once the iOS inset pushed the room down and the bottom
++    -- trim shortened it: a black bar under the notch, in-run only (#36).
++    G.SPLASH_BACK = Sprite(-30, -11, G.ROOM.T.w+60, G.ROOM.T.h+22, G.ASSET_ATLAS["ui_1"], {x = 2, y = 0})
+     G.SPLASH_BACK:set_alignment({
+         major = G.play,
+         type = 'cm',
+@@ -2394,15 +2469,44 @@
+     self.deck:hard_set_cards()
+     
+     self.HUD = UIBox{
+-        definition = create_UIBox_HUD(),
+-        config = {align=('cli'), offset = {x=-0.7,y=0},major = G.ROOM_ATTACH}
++        definition = (G.F_PORTRAIT and create_UIBox_HUD_vertical() or create_UIBox_HUD()), 
++        config = {
++            align = (G.F_PORTRAIT and 'tm' or 'cli'), 
++            offset = (G.F_PORTRAIT and {x=0, y=0} or {x=-0.7, y=0}), 
++            major = (G.F_PORTRAIT and G.ROOM or G.ROOM_ATTACH)
++        }
+     }
++    
++    -- Portrait: Force HUD to TOP of screen
++    if G.F_PORTRAIT then
++        self.HUD.T.y = 0.2  -- Little margin - HUD at top
++        self.HUD.T.x = (G.ROOM.T.w - self.HUD.T.w) / 2
++    end
++    
+     self.HUD_blind = UIBox{
+         definition = create_UIBox_HUD_blind(),
+         config = {major = G.HUD:get_UIE_by_ID('row_blind'), align = 'cm', offset = {x=0,y=-10}, bond = 'Weak'}
+     }
++    -- Attach the debuff-text func AFTER construction so G.HUD_blind is set.
++    -- We use portrait_HUD_blind_debuff (defined in button_callbacks.lua) instead
++    -- of HUD_blind_debuff so SMODS's structural override doesn't mutate our
++    -- text nodes (which would crash set_wh — see button_callbacks for details).
++    local _hb_d1 = self.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_1')
++    if _hb_d1 then _hb_d1.config.func = 'portrait_HUD_blind_debuff' end
++    local _hb_d2 = self.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_2')
++    if _hb_d2 then _hb_d2.config.func = 'portrait_HUD_blind_debuff' end
+     self.HUD_tags = {}
+ 
++    if G.F_PORTRAIT and PORTRAIT_CONFIG.hand_preview and PORTRAIT_CONFIG.hand_preview.enabled then
++        if self.hand_preview then self.hand_preview:remove(); self.hand_preview = nil end
++        self.hand_preview = UIBox{
++            definition = create_UIBox_hand_preview(),
++            config = {align = 'tm', offset = {x = 0, y = PORTRAIT_CONFIG.hand_preview.y_offset or -0.65}, major = self.hand, bond = 'Weak'}
++        }
++        self.hand_preview.states.collide.can = false
++        self.hand_preview.states.visible = false
++    end
++
+     G.hand_text_area = {
+         chips = self.HUD:get_UIE_by_ID('hand_chips'),
+         mult = self.HUD:get_UIE_by_ID('hand_mult'),
+@@ -2435,6 +2539,8 @@
+     G.FUNCS.blind_chip_UI_scale(G.hand_text_area.blind_chips)
+      
+     self.HUD:recalculate()
++    -- The shelves of the non-classic layouts start under the HUD just built.
++    if G.F_PORTRAIT then set_screen_positions() end
+ 
+     G.E_MANAGER:add_event(Event({
+         trigger = 'immediate',
+@@ -2931,9 +3037,10 @@
+ love.graphics.pop()
+     
+     love.graphics.setCanvas(G.AA_CANVAS)
++    love.graphics.clear(0, 0, 0, 1)
+     love.graphics.push()
+         love.graphics.setColor(G.C.WHITE)
+-    if (not G.recording_mode or G.video_control )and true then
++    if (not G.recording_mode or G.video_control) and true then
+         G.ARGS.eased_cursor_pos = G.ARGS.eased_cursor_pos or {x=G.CURSOR.T.x,y=G.CURSOR.T.y, sx = G.CONTROLLER.cursor_position.x, sy = G.CONTROLLER.cursor_position.y}
+         G.screenwipe_amt = G.screenwipe_amt and (0.95*G.screenwipe_amt + 0.05*((self.screenwipe and 0.4 or self.screenglitch and 0.4) or 0)) or 1
+         G.SETTINGS.GRAPHICS.crt = G.SETTINGS.GRAPHICS.crt*0.3
+@@ -3044,10 +3151,7 @@
+         }))
+     end
+     if not self.buttons and not self.deck_preview then
+-        self.buttons = UIBox{
+-            definition = create_UIBox_buttons(),
+-            config = {align="bm", offset = {x=0,y=0.3},major = G.hand, bond = 'Weak'}
+-        }
++        rebuild_buttons_uibox()
+     end
+     if self.buttons and not self.buttons.states.visible and not self.deck_preview then
+         self.buttons.states.visible = true
+@@ -3072,6 +3176,18 @@
+ function Game:update_shop(dt)
+     if not G.STATE_COMPLETE then
+         stop_use()
++
++        --Shop entry is a safe boundary to apply a pending Swipe Only toggle:
++        --no cards are mid-animation and the shop UI hasn't been built yet, so
++        --everything below picks up the new scale/layout. The next hand then
++        --starts in the new mode without restarting the run.
++        if G.F_PORTRAIT and G.F_SWIPE_ONLY ~= (not not G.SETTINGS.swipe_only_mode) then
++            G.F_SWIPE_ONLY = not not G.SETTINGS.swipe_only_mode
++            pcall(function() love.resize(love.graphics.getDimensions()) end)
++            if G.HUD and G.ROOM then G.HUD.T.x = (G.ROOM.T.w - G.HUD.T.w)/2 end
++            rebuild_buttons_uibox()
++        end
++
+         ease_background_colour_blind(G.STATES.SHOP)
+         local shop_exists = not not G.shop
+         G.shop = G.shop or UIBox{
+@@ -3080,7 +3196,8 @@
+         }
+             G.E_MANAGER:add_event(Event({
+                 func = function()
+-                    G.shop.alignment.offset.y = -5.3
++                    -- Top edge kept under the joker shelf (portrait_shop_offset).
++                    G.shop.alignment.offset.y = portrait_shop_offset()
+                     G.shop.alignment.offset.x = 0
+                     G.E_MANAGER:add_event(Event({
+                         trigger = 'after',
+@@ -3283,7 +3400,9 @@
+                     definition = create_UIBox_blind_select(),
+                     config = {align="bmi", offset = {x=0,y=G.ROOM.T.y + 29},major = G.hand, bond = 'Weak'}
+                 }
+-                G.blind_select.alignment.offset.y = 0.8-(G.hand.T.y - G.jokers.T.y) + G.blind_select.T.h
++                G.blind_select.alignment.offset.y = 0.8-(G.hand.T.y - (G.F_PORTRAIT and PORTRAIT_CONFIG.jokers_y or G.jokers.T.y)) + G.blind_select.T.h
++                -- Portrait: kept between the joker shelf and the screen's bottom.
++                if G.F_PORTRAIT then G.blind_select.alignment.offset.y = portrait_blind_select_offset() end
+                 G.ROOM.jiggle = G.ROOM.jiggle + 3
+                 G.blind_select.alignment.offset.x = 0
+                 G.CONTROLLER.lock_input = false
+@@ -3312,16 +3431,35 @@
+                 G.GAME.facing_blind = nil
+                 save_run()
+                 ease_background_colour_blind(G.STATES.ROUND_EVAL)
++                local round_eval_align = G.F_PORTRAIT and "b" or "bm"
+                 G.round_eval = UIBox{
+                     definition = create_UIBox_round_evaluation(),
+-                    config = {align="bm", offset = {x=0,y=G.ROOM.T.y + 19},major = G.hand, bond = 'Weak'}
++                    config = {align=round_eval_align, offset = {x=0,y=G.ROOM.T.y + 19},major = G.hand, bond = 'Weak'}
+                 }
+                 G.round_eval.alignment.offset.x = 0
++                if G.F_PORTRAIT and G.ROOM and G.ROOM.T then
++                    local x = (G.ROOM.T.w - G.round_eval.T.w)/2
++                    if G.round_eval.role and G.round_eval.role.offset and G.round_eval.role.major then
++                        local major = G.round_eval.role.major:get_major()
++                        local major_x = major and major.major and (major.major.T.x + (major.offset and major.offset.x or 0)) or G.round_eval.role.major.T.x
++                        G.round_eval.role.offset.x = x - major_x
++                    end
++                    G.round_eval.T.x = x
++                    G.round_eval.VT.x = x
++                    G.round_eval.velocity.x = 0
++                end
++                -- How far the panel rises above the hand: never onto the joker
++                -- shelf (portrait_shelf_floor), where it lost Cash Out's taps.
++                local eval_rise = -7.8 + portrait_panel_drop()
++                local floor_y = portrait_shelf_floor()
++                if floor_y then
++                    eval_rise = math.max(eval_rise, floor_y - (G.hand.T.y + G.hand.T.h))
++                end
+                 G.E_MANAGER:add_event(Event({
+                     trigger = 'immediate',
+                     func = function()
+-                        if G.round_eval.alignment.offset.y ~= -7.8 then
+-                            G.round_eval.alignment.offset.y = -7.8
++                        if G.round_eval.alignment.offset.y ~= eval_rise then
++                            G.round_eval.alignment.offset.y = eval_rise
+                         else
+                             if math.abs(G.round_eval.T.y - G.round_eval.VT.y) < 3 then
+                                     G.ROOM.jiggle = G.ROOM.jiggle + 3

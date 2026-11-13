@@ -1,0 +1,605 @@
+--- a/functions/common_events.lua
++++ b/functions/common_events.lua
+@@ -1,39 +1,124 @@
+-local platform = require("engine/platform")
+-
+ function set_screen_positions()
+-    if G.STAGE == G.STAGES.RUN then
+-        G.hand.T.x = G.TILE_W - G.hand.T.w - 3.55
+-        G.hand.T.y = G.TILE_H - G.hand.T.h
++    -- Every card area this touches has to exist, not just the hand. A mod that
++    -- resizes the window while the run is still being built gets here with the
++    -- rest of them still nil: Silk Touch did exactly that and took the game
++    -- down with "attempt to index field 'play'" on iOS (#45).
++    if G.STAGE == G.STAGES.RUN and G.hand and G.jokers and G.play
++       and G.consumeables and G.deck and G.discard then
++        -- Early exit if ROOM is not initialized
++        if not G.ROOM or not G.ROOM.T then return end
++        
++        if G.F_PORTRAIT and portrait_place_areas() then
++            -- One-Thumb and Focus place the areas in their frame
++            -- (portrait_layouts.lua).
++        elseif G.F_PORTRAIT then
++            local pc = PORTRAIT_CONFIG
++            local room_w = G.ROOM.T.w or 10
++            local room_h = G.ROOM.T.h or 20
+ 
+-        G.play.T.x = G.hand.T.x + (G.hand.T.w - G.play.T.w)/2
+-        G.play.T.y = G.hand.T.y - 3.6
++            local hud_top_space = pc.hud_top_space
++            local bottom_margin = pc.bottom_margin
+ 
+-        G.jokers.T.x = G.hand.T.x - 0.1
+-        G.jokers.T.y = 0
++            -- Card area widths are fixed at run start; the room width in game
++            -- units shrinks when the UI is scaled up (Swipe Only mode), which
++            -- would push the shelves past the screen edges. Clamp them to the
++            -- room so everything stays centered at any scale.
++            local max_area_w = room_w * (pc.usable_w_factor or 0.96)
++            if G.jokers.T.w > max_area_w then G.jokers.T.w = max_area_w end
++            if G.hand.T.w > max_area_w then G.hand.T.w = max_area_w end
++            if G.play.T.w > max_area_w then G.play.T.w = max_area_w end
+ 
+-        G.consumeables.T.x = G.jokers.T.x + G.jokers.T.w + 0.8
+-        G.consumeables.T.y = 0
++            G.jokers.T.x = (room_w - G.jokers.T.w) / 2
++            G.jokers.T.y = portrait_jokers_y()
++            
++            G.hand.T.x = (room_w - G.hand.T.w) / 2
++            G.hand.T.y = room_h - G.hand.T.h - bottom_margin - get_hand_base_offset()
+ 
+-        G.deck.T.x = G.TILE_W - G.deck.T.w - 0.5
+-        G.deck.T.y = G.TILE_H - G.deck.T.h
++            -- Center the played-card "stage" in the gap between the joker shelf
++            -- and the hand, instead of hugging the hand and leaving the middle
++            -- of the screen empty. The hand slides up ~3 units while selecting,
++            -- so center against that raised position to avoid overlap.
++            local shelf_bottom = G.jokers.T.y + G.jokers.T.h
++            -- On a short room (tablets) the full 2.5 gap put the played cards,
++            -- and the boss alert drawn over them, onto the resting hand: there
++            -- the stage stops just above the hand instead.
++            local jokers_bottom_limit = math.min(shelf_bottom + 2.5,
++                math.max(shelf_bottom + 0.2, G.hand.T.y - G.play.T.h - 0.2))
++            local hand_top_selecting = G.hand.T.y - 3
++            local centered_play_y = shelf_bottom + (hand_top_selecting - shelf_bottom - G.play.T.h) / 2
+ 
+-        G.discard.T.x = G.jokers.T.x + G.jokers.T.w/2 + 0.3 + 15
+-        G.discard.T.y = 4.2
++            G.play.T.x = (room_w - G.play.T.w) / 2
++            G.play.T.y = math.min(centered_play_y, hand_top_selecting - G.play.T.h - 0.5)
++            G.play.T.y = math.max(G.play.T.y, jokers_bottom_limit)
+ 
++            if G.SETTINGS.play_main_hand == 2 then
++                G.consumeables.T.x = G.jokers.T.x + G.jokers.T.w - G.consumeables.T.w
++                G.consumeables.T.y = G.jokers.T.y - G.jokers.T.h - 0.6
++
++                G.deck.T.x = G.jokers.T.x + G.jokers.T.w/6
++                G.deck.T.y = G.jokers.T.y - G.jokers.T.h - 0.6
++            else
++                G.consumeables.T.x = G.jokers.T.x
++                G.consumeables.T.y = G.jokers.T.y - G.jokers.T.h - 0.6
++
++                G.deck.T.x = G.jokers.T.x + G.jokers.T.w - G.deck.T.w - G.jokers.T.w/6
++                G.deck.T.y = G.jokers.T.y - G.jokers.T.h - 0.6
++            end
++            
++            if pc.deck_position == 'bottom_right' then
++                G.deck.T.x = room_w - G.deck.T.w - 0.25
++                G.deck.T.y = G.hand.T.y - G.deck.T.h - 0.5
++            end
++
++            G.discard.T.x = G.play.T.x + G.play.T.w + pc.discard_x_offset
++            G.discard.T.y = G.play.T.y
++        else
++            -- LANDSCAPE MODE (original)
++            G.hand.T.x = G.TILE_W - G.hand.T.w - 2.85
++            G.hand.T.y = G.TILE_H - G.hand.T.h
++
++            G.play.T.x = G.hand.T.x + (G.hand.T.w - G.play.T.w)/2
++            G.play.T.y = G.hand.T.y - 3.6
++
++            G.jokers.T.x = G.hand.T.x - 0.1
++            G.jokers.T.y = 0
++
++            G.consumeables.T.x = G.jokers.T.x + G.jokers.T.w + 0.2
++            G.consumeables.T.y = 0
++
++            G.deck.T.x = G.TILE_W - G.deck.T.w - 0.5
++            G.deck.T.y = G.TILE_H - G.deck.T.h
++
++            G.discard.T.x = G.jokers.T.x + G.jokers.T.w/2 + 0.3 + 15
++            G.discard.T.y = 4.2
++        end
++
++        if G.F_PORTRAIT then portrait_realign_area_boxes() end
+         G.hand:hard_set_VT()
+         G.play:hard_set_VT()
+         G.jokers:hard_set_VT()
+         G.consumeables:hard_set_VT()
+         G.deck:hard_set_VT()
+         G.discard:hard_set_VT()
++        G.play:hard_set_VT()
++        G.jokers:hard_set_VT()
++        G.consumeables:hard_set_VT()
++        G.deck:hard_set_VT()
++        G.discard:hard_set_VT()
+     end
+-    if G.STAGE == G.STAGES.MAIN_MENU then
+-        if G.STATE == G.STATES.DEMO_CTA then
+-            G.title_top.T.x = G.TILE_W/2 - G.title_top.T.w/2
+-            G.title_top.T.y = G.TILE_H/2 - G.title_top.T.h/2 - 2
++    if G.STAGE == G.STAGES.MAIN_MENU and G.title_top then
++        if G.F_PORTRAIT then
++            -- Portrait main menu: center logo in visible area
++            G.title_top.T.x = G.ROOM.T.w/2 - G.title_top.T.w/2
++            G.title_top.T.y = G.ROOM.T.h * 0.15
+         else
+-            G.title_top.T.x = G.TILE_W/2 - G.title_top.T.w/2
+-            G.title_top.T.y = G.TILE_H/2 - G.title_top.T.h/2 -(G.debug_splash_size_toggle and 2 or 1.2)--|||||||||||||||||
++            if G.STATE == G.STATES.DEMO_CTA then
++                G.title_top.T.x = G.TILE_W/2 - G.title_top.T.w/2
++                G.title_top.T.y = G.TILE_H/2 - G.title_top.T.h/2 - 2
++            else
++                G.title_top.T.x = G.TILE_W/2 - G.title_top.T.w/2
++                G.title_top.T.y = G.TILE_H/2 - G.title_top.T.h/2 -(G.debug_splash_size_toggle and 2 or 1.2)
++            end
+         end
+ 
+         G.title_top:hard_set_VT()
+@@ -414,7 +499,6 @@
+             if not mute and drawn then
+                 if from == G.deck or from == G.hand or from == G.play or from == G.jokers or from == G.consumeables or from == G.discard then
+                     G.VIBRATION = G.VIBRATION + 0.6
+-                    G.MOBILE_VIBRATION_QUEUE = math.max(G.MOBILE_VIBRATION_QUEUE or 0, 1)
+                 end
+                 play_sound('card1', 0.85 + percent*0.2/100, 0.6*(vol or 1))
+             end
+@@ -569,8 +653,8 @@
+         end
+         if config.sound and not config.modded then play_sound(config.sound, config.pitch or 1, config.volume or 1) end
+         if config.modded then 
+-            G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_1'):juice_up(0.3, 0)
+-            G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_2'):juice_up(0.3, 0)
++            local _uie_HUD_blind_debuff_1 = G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_1'); if _uie_HUD_blind_debuff_1 then _uie_HUD_blind_debuff_1:juice_up(0.3, 0) end
++            local _uie_HUD_blind_debuff_2 = G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_2'); if _uie_HUD_blind_debuff_2 then _uie_HUD_blind_debuff_2:juice_up(0.3, 0) end
+             G.GAME.blind:juice_up()
+             G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0.06*G.SETTINGS.GAMESPEED, blockable = false, blocking = false, func = function()
+                 play_sound('tarot2', 0.76, 0.4);return true end}))
+@@ -754,26 +838,80 @@
+ end
+ 
+ function set_main_menu_UI()
++    if G.PROFILE_BUTTON then G.PROFILE_BUTTON:remove(); G.PROFILE_BUTTON = nil end
++    if G.LANGUAGE_BUTTON then G.LANGUAGE_BUTTON:remove(); G.LANGUAGE_BUTTON = nil end
++
++    local x_offset_base = 0
++    local x_offset_plus = 0
++    local y_offset_base = 0
++    local corner_y_offset = 0
++    local corner_x_offset = 0
++    if G.F_PORTRAIT then
++        local pc = PORTRAIT_CONFIG.main_menu
++        x_offset_base = pc.x_offset_base
++        x_offset_plus = pc.x_offset_plus
++        y_offset_base = pc.y_offset_base
++        -- Up and in, out of the rounded display corner on iOS. Zero elsewhere.
++        local corner_lift, corner_inset = get_portrait_corner_nudge()
++        corner_y_offset = (pc.corner_y_offset or y_offset_base) - corner_lift
++        corner_x_offset = x_offset_base + corner_inset
++    end
++    local menu_x_offset = x_offset_base*2+x_offset_plus
++    if G.F_PORTRAIT then
++        menu_x_offset = 0
++    end
++
+     G.MAIN_MENU_UI = UIBox{
+-        definition = create_UIBox_main_menu_buttons(), 
+-        config = {align="bmi", offset = {x=0,y=10}, major = G.ROOM_ATTACH, bond = 'Weak'}
++        definition = portrait_adopt_mods_button(create_UIBox_main_menu_buttons()),
++        config = {align="bmi", offset = {x=menu_x_offset,y=10}, major = G.ROOM_ATTACH, bond = 'Weak'}
+     }
+-    G.MAIN_MENU_UI.alignment.offset.y = 0
++    G.MAIN_MENU_UI.alignment.offset.y = y_offset_base - (G.F_PORTRAIT and get_portrait_menu_lift() or 0)
+     G.MAIN_MENU_UI:align_to_major()
+     G.E_MANAGER:add_event(Event({
+         blockable = false,
+         blocking = false,
+         func = (function()
++            if not G.MAIN_MENU_UI then return true end
++            portrait_inset_title_labels()
++            -- The corner boxes sit beside the menu column, and the column is
++            -- not the same width everywhere: a Mods button, a Quit button and
++            -- the UI scale all change it, and a narrow phone room leaves little
++            -- either side. Pushing a box inward by a fixed amount overlapped
++            -- the column on a 360dp phone (#48), so each box is only moved in
++            -- as far as its own side has room for, measured from where the
++            -- column actually landed.
++            local function fitted_offset(box, right_side)
++                if not (G.F_PORTRAIT and box and box.T and G.MAIN_MENU_UI and G.MAIN_MENU_UI.T
++                        and G.ROOM and G.ROOM.T) then
++                    return corner_x_offset
++                end
++                local room, menu = G.ROOM.T, G.MAIN_MENU_UI.T
++                local gap = right_side
++                    and ((room.x + room.w) - (menu.x + menu.w))
++                    or (menu.x - room.x)
++                local clearance = (PORTRAIT_CONFIG.main_menu and PORTRAIT_CONFIG.main_menu.corner_clearance) or 0.15
++                local room_for_inset = gap - box.T.w - clearance
++                return math.max(0, math.min(corner_x_offset, room_for_inset))
++            end
++
+             if (not G.F_DISP_USERNAME) or (type(G.F_DISP_USERNAME) == 'string') then
+                 G.PROFILE_BUTTON = UIBox{
+-                    definition =  create_UIBox_profile_button(), 
+-                        config = {align="bli", offset = {x=-10,y=0}, major = G.ROOM_ATTACH, bond = 'Weak'}}
+-                    G.PROFILE_BUTTON.alignment.offset.x = 0
+-                    G.PROFILE_BUTTON:align_to_major()
+-                return true
++                    definition = create_UIBox_profile_button(),
++                    config = {align="bli", offset = {x=-10,y=corner_y_offset}, major = G.ROOM_ATTACH, bond = 'Weak'}}
++                G.PROFILE_BUTTON.alignment.offset.x = fitted_offset(G.PROFILE_BUTTON, false)
++                G.PROFILE_BUTTON:align_to_major()
+             end
++            if G.F_PORTRAIT and not G.F_ENGLISH_ONLY then
++                G.LANGUAGE_BUTTON = UIBox{
++                    definition = create_UIBox_language_button(),
++                    config = {align="bri", offset = {x=10,y=corner_y_offset}, major = G.ROOM_ATTACH, bond = 'Weak'}}
++                G.LANGUAGE_BUTTON.alignment.offset.x = -fitted_offset(G.LANGUAGE_BUTTON, true)
++                G.LANGUAGE_BUTTON:align_to_major()
++            end
++            return true
+         end)
+       }))
++
+     
+     G.CONTROLLER:snap_to{node = G.MAIN_MENU_UI:get_UIE_by_ID('main_menu_play')}
+ end
+@@ -931,6 +1069,19 @@
+     local width = G.round_eval.T.w - 0.51
+     local num_dollars = config.dollars or 1
+     local scale = 0.9
++    local function center_round_eval()
++        if G.F_PORTRAIT and G.round_eval and G.ROOM and G.ROOM.T then
++            local x = (G.ROOM.T.w - G.round_eval.T.w)/2
++            if G.round_eval.role and G.round_eval.role.offset and G.round_eval.role.major then
++                local major = G.round_eval.role.major:get_major()
++                local major_x = major and major.major and (major.major.T.x + (major.offset and major.offset.x or 0)) or G.round_eval.role.major.T.x
++                G.round_eval.role.offset.x = x - major_x
++            end
++            G.round_eval.T.x = x
++            G.round_eval.VT.x = x
++            G.round_eval.velocity.x = 0
++        end
++    end
+ 
+     if config.name ~= 'bottom' then
+         if config.name ~= 'blind1' then
+@@ -942,6 +1093,7 @@
+                             {n=G.UIT.O, config={object = DynaText({string = {'......................................'}, colours = {G.C.WHITE},shadow = true, float = true, y_offset = -30, scale = 0.45, spacing = 13.5, font = G.LANGUAGES['en-us'].font, pop_in = 0})}}
+                         }}
+                         G.round_eval:add_child(spacer,G.round_eval:get_UIE_by_ID(config.bonus and 'bonus_round_eval' or 'base_round_eval'))
++                        center_round_eval()
+                         return true
+                     end
+                 }))
+@@ -1014,6 +1166,8 @@
+                     G.GAME.blind:juice_up()
+                 end
+                 G.round_eval:add_child(full_row,G.round_eval:get_UIE_by_ID(config.bonus and 'bonus_round_eval' or 'base_round_eval'))
++                if G.F_PORTRAIT then portrait_line_up_eval_row(config.name, width) end
++                center_round_eval()
+                 play_sound('cancel', config.pitch or 1)
+                 play_sound('highlight1',( 1.5*config.pitch) or 1, 0.2)
+                 if config.card then config.card:juice_up(0.7, 0.46) end
+@@ -1031,6 +1185,7 @@
+                                 {n=G.UIT.O, config={object = DynaText({string = {localize('$')..num_dollars}, colours = {G.C.MONEY}, shadow = true, pop_in = 0, scale = 0.65, float = true})}}
+                             }},
+                             G.round_eval:get_UIE_by_ID('dollar_'..config.name))
++                    center_round_eval()
+ 
+                     play_sound('coin3', 0.9+0.2*math.random(), 0.7)
+                     play_sound('coin6', 1.3, 0.8)
+@@ -1046,6 +1201,7 @@
+                             G.round_eval:add_child(
+                                 {n=G.UIT.R, config={align = "cm", id = 'dollar_row_'..(dollar_row+1)..'_'..config.name}, nodes={}},
+                                 G.round_eval:get_UIE_by_ID('dollar_'..config.name))
++                                center_round_eval()
+                                 dollar_row = dollar_row+1
+                         end
+ 
+@@ -1057,7 +1213,7 @@
+                         end
+ 
+                         G.round_eval:add_child(r,G.round_eval:get_UIE_by_ID('dollar_row_'..(dollar_row)..'_'..config.name))
+-                        G.MOBILE_VIBRATION_QUEUE = math.max(G.MOBILE_VIBRATION_QUEUE or 0, 1)
++                        center_round_eval()
+                         G.VIBRATION = G.VIBRATION + 0.4
+                         return true
+                     end
+@@ -1069,17 +1225,24 @@
+         G.E_MANAGER:add_event(Event({
+             trigger = 'before',delay = 0.5,
+             func = function()
+-                UIBox{
+-                    definition = {n=G.UIT.ROOT, config={align = 'cm', colour = G.C.CLEAR}, nodes={
+-                        {n=G.UIT.R, config={id = 'cash_out_button', align = "cm", padding = 0.1, minw = 7, r = 0.15, colour = G.C.ORANGE, shadow = true, hover = true, one_press = true, button = 'cash_out', focus_args = {snap_to = true}}, nodes={
+-                            {n=G.UIT.T, config={text = localize('b_cash_out')..": ", scale = 1, colour = G.C.UI.TEXT_LIGHT, shadow = true}},
+-                            {n=G.UIT.T, config={text = localize('$')..config.dollars, scale = 1.2*scale, colour = G.C.WHITE, shadow = true, juice = true}}
+-                    }},}},
+-                    config = {
+-                      align = 'tmi',
+-                      offset ={x=0,y=0.4},
+-                      major = G.round_eval}
+-                }
++                local cash_out_button = {n=G.UIT.R, config={id = 'cash_out_button', align = "cm", padding = G.F_PORTRAIT and 0.03 or 0.1, minw = G.F_PORTRAIT and 5.7 or 7, r = 0.15, colour = G.C.ORANGE, shadow = true, hover = true, one_press = true, button = 'cash_out', focus_args = {snap_to = true}}, nodes={
++                    {n=G.UIT.T, config={text = localize('b_cash_out')..": ", scale = G.F_PORTRAIT and 0.82 or 1, colour = G.C.UI.TEXT_LIGHT, shadow = true}},
++                    {n=G.UIT.T, config={text = localize('$')..config.dollars, scale = G.F_PORTRAIT and 1.0 or 1.2*scale, colour = G.C.WHITE, shadow = true, juice = true}}
++                }}
++                if G.F_PORTRAIT then
++                    G.round_eval:add_child(cash_out_button, G.round_eval:get_UIE_by_ID('eval_bottom'))
++                else
++                    UIBox{
++                        definition = {n=G.UIT.ROOT, config={align = 'cm', colour = G.C.CLEAR}, nodes={
++                            cash_out_button,
++                        }},
++                        config = {
++                          align = 'tmi',
++                          offset ={x=0,y=0.4},
++                          major = G.round_eval}
++                    }
++                end
++                center_round_eval()
+ 
+                 --local left_text = {n=G.UIT.R, config={id = 'cash_out_button', align = "cm", padding = 0.1, minw = 2, r = 0.15, colour = G.C.ORANGE, shadow = true, hover = true, one_press = true, button = 'cash_out', focus_args = {snap_to = true}}, nodes={
+                 --    {n=G.UIT.T, config={text = localize('b_cash_out')..": ", scale = 1, colour = G.C.UI.TEXT_LIGHT, shadow = true}},
+@@ -1091,21 +1254,9 @@
+                 
+                 play_sound('coin6', config.pitch or 1)
+                 G.VIBRATION = G.VIBRATION + 1
+-                G.MOBILE_VIBRATION_QUEUE = math.max(G.MOBILE_VIBRATION_QUEUE or 0, 2)
+                 return true
+             end
+         }))
+-        if G.GAME.round_resets.ante == 3 then
+-            G.E_MANAGER:add_event(Event({
+-                trigger = 'after',
+-                blocking = false,
+-                delay = 0.3,
+-                func = function()
+-                    G.FUNCS.rate_us_flow()
+-                    return true
+-                end
+-            }))
+-        end
+     end
+ end
+ 
+@@ -1164,21 +1315,18 @@
+     G.CURR_VIBRATION = math.min(1, G.CURR_VIBRATION + G.VIBRATION + G.JIGGLE_VIBRATION*0.2)
+     G.VIBRATION = 0
+     G.CURR_VIBRATION = (1-15*dt)*G.CURR_VIBRATION
+-    if not G.SETTINGS.rumble then G.CURR_VIBRATION = 0 end
+-
+-    if G.F_RUMBLE and G.SETTINGS.rumble then
+-        if G.CONTROLLER.GAMEPAD and G.CONTROLLER.GAMEPAD.object then G.CONTROLLER.GAMEPAD.object:setVibration(G.CURR_VIBRATION*0.4*G.F_RUMBLE, G.CURR_VIBRATION*0.4*G.F_RUMBLE)
+-        elseif (love.system.getOS() == 'Android') then 
+-        elseif (love.system.getOS() == 'iOS') and G.MOBILE_VIBRATION_QUEUE > 0 then love.system.vibrate( 1, G.MOBILE_VIBRATION_QUEUE == 1 and 'light' or G.MOBILE_VIBRATION_QUEUE == 2 and 'medium' or G.MOBILE_VIBRATION_QUEUE == 3 and 'heavy' or 'rigid' ); G.MOBILE_VIBRATION_QUEUE = 0
+-        end
++    local allow_rumble = G.SETTINGS.rumble
++    if love.system.getOS() == 'Android' then
++        allow_rumble = allow_rumble and haptics_enabled()
+     end
+-    G.VIBRATION = 0
++    if not allow_rumble then G.CURR_VIBRATION = 0 end
++    if G.CONTROLLER.GAMEPAD.object and G.F_RUMBLE then G.CONTROLLER.GAMEPAD.object:setVibration(G.CURR_VIBRATION*0.4*G.F_RUMBLE, G.CURR_VIBRATION*0.4*G.F_RUMBLE) end
+ end
+ 
+ function juice_card_until(card, eval_func, first, delay)
+     G.E_MANAGER:add_event(Event({
+         trigger = 'after',delay = delay or 0.1, blocking = false, blockable = false, timer = 'REAL',
+-        func = (function() if eval_func(card) then if not first or first then card:juice_up(0.1, 0.1, true) end;juice_card_until(card, eval_func, nil, 0.8) end return true end)
++        func = (function() if eval_func(card) then if not first or first then card:juice_up(0.1, 0.1) end;juice_card_until(card, eval_func, nil, 0.8) end return true end)
+     }))
+ end
+ 
+@@ -1781,7 +1929,7 @@
+ 
+                 --|Other platforms
+                 --|-------------------------------------------------------
+-                platform:unlockAchievement(achievement_name)
++
+                 --|-------------------------------------------------------
+ 
+                 if achievement_set then notify_alert(achievement_name) end
+@@ -1791,14 +1939,7 @@
+         }), 'achievement')
+ end
+ 
+-function notify_left()
+-    if love.platform and love.platform.getNotchPosition and love.platform.getNotchPosition() == 'right' then
+-        return true
+-    end
+-end
+-
+ function notify_alert(_achievement, _type)
+-    left_not = notify_left()
+     _type = _type or 'achievement'
+     G.E_MANAGER:add_event(Event({
+       no_delete = true,
+@@ -1810,8 +1951,8 @@
+             G.achievement_notification = nil
+         end
+         G.achievement_notification = G.achievement_notification or UIBox{
+-            definition = create_UIBox_notify_alert(_achievement, _type, left_not),
+-            config = {align=left_not and 'cl' or 'cr', offset = {x=left_not and -20 or 20,y=0},major = G.ROOM_ATTACH, bond = 'Weak'}
++            definition = create_UIBox_notify_alert(_achievement, _type),
++            config = {align='cr', offset = {x=20,y=0},major = G.ROOM_ATTACH, bond = 'Weak'}
+         }
+         return true
+       end
+@@ -1823,7 +1964,7 @@
+         timer = 'UPTIME',
+         delay = 0.1,
+         func = function()
+-            G.achievement_notification.alignment.offset.x = left_not and (-G.ROOM.T.x + G.achievement_notification.UIRoot.children[1].children[1].T.w + 0.8) or (G.ROOM.T.x - G.achievement_notification.UIRoot.children[1].children[1].T.w - 0.8)
++            G.achievement_notification.alignment.offset.x = G.ROOM.T.x - G.achievement_notification.UIRoot.children[1].children[1].T.w - 0.8
+           return true
+         end
+     }), 'achievement')
+@@ -1846,7 +1987,7 @@
+       delay = 3,
+       timer = 'UPTIME',
+       func = function()
+-        G.achievement_notification.alignment.offset.x = left_not and -20 or 20
++        G.achievement_notification.alignment.offset.x = 20
+         return true
+       end
+     }), 'achievement')
+@@ -1881,7 +2022,7 @@
+         for key in string.gmatch(_UN .. "\n", "(.-)\n") do
+             create_unlock_overlay(key)
+         end
+-        love.mod_filesystem.remove(G.SETTINGS.profile..'/'..'unlock_notify.jkr')
++        love.filesystem.remove(G.SETTINGS.profile..'/'..'unlock_notify.jkr')
+     end
+ end
+ 
+@@ -1905,16 +2046,6 @@
+     end
+ end
+ 
+-function create_controller_required_overlay(_name)
+-    if not G.OVERLAY_MENU then 
+-        G.SETTINGS.paused = true
+-        G.FUNCS.overlay_menu{
+-            definition = create_UIBox_controller_required(),
+-        }
+-        return true
+-    end
+-end
+-
+ function discover_card(card)
+     if G.GAME.seeded or G.GAME.challenge then return end
+     card = card or {}
+@@ -2122,9 +2253,6 @@
+     local area = area or G.jokers
+     local center = G.P_CENTERS.b_red
+         
+-    if G.FTP_LOCKED then 
+-        soulable = nil
+-    end
+ 
+     --should pool be skipped with a forced key
+     if not forced_key and soulable and (not G.GAME.banned_keys['c_soul']) then
+@@ -2227,18 +2355,13 @@
+     ease_value(overlay_colour, 4, 0.6, nil, 'REAL', true,0.4)
+     G.OVERLAY_TUTORIAL = G.OVERLAY_TUTORIAL or UIBox{
+         definition = {n=G.UIT.ROOT, config = {align = "cm", padding = 32.05, r=0.1, colour = overlay_colour, emboss = 0.05}, nodes={
+-            {n=G.UIT.R, config={align = "br", minh = G.ROOM.T.h, minw = G.ROOM.T.w}, nodes={
+-
+-                {n=G.UIT.R, config={ref_table = args, align = "tm", padding = 0.1, r = 0.15, colour = G.C.JOKER_GREY, minw = 1.6, minh = 1.2, focus_args = {button = 'b', orientation = 'bmi', offset = {x = 0, y = -0.1}}, func = 'set_button_pip', button = "skip_tutorial_section", hover = true, shadow = true}, nodes={
+-                    {n=G.UIT.T, config={text = localize('b_skip').." >", scale = 0.5, colour = G.C.TEXT_DARK}}
+-                }}
+-
+-                --UIBox_button{label = {localize('b_skip').." >"}, focus_args = {button = 'b', orientation = 'bmi', offset = {x = 0, y = 0.1}}, func = 'set_button_pip', button = "skip_tutorial_section", align = 'tm', minw = 1.6, minh = 1.5, scale = 0.45, colour = G.C.JOKER_GREY}
++            {n=G.UIT.R, config={align = "tr", minh = G.ROOM.T.h, minw = G.ROOM.T.w}, nodes={
++                UIBox_button{label = {localize('b_skip').." >"}, button = "skip_tutorial_section", minw = 1.3, scale = 0.45, colour = G.C.JOKER_GREY}
+             }}
+         }},
+         config = {
+             align = "cm",
+-            offset = {x=-0.5,y=-1},
++            offset = {x=0,y=3.2},
+             major = G.ROOM_ATTACH,
+             bond = 'Weak'
+           }
+@@ -2248,7 +2371,23 @@
+     local row_dollars_chips = G.HUD:get_UIE_by_ID('row_dollars_chips')
+     local align = args.align or "tm"
+     local step = args.step or 1
+-    local attach = args.attach or {major = row_dollars_chips, type = 'tm', offset = {x=0, y=-0.5}}
++    local source_attach = args.attach or {major = row_dollars_chips, type = 'tm', offset = {x=0, y=-0.5}}
++    local attach = {
++        major = source_attach.major,
++        type = source_attach.type,
++        offset = {
++            x = source_attach.offset and source_attach.offset.x or 0,
++            y = source_attach.offset and source_attach.offset.y or 0
++        }
++    }
++    if G.F_PORTRAIT then
++        if attach.offset then
++            attach.offset.y = (attach.offset.y or 0) + 2
++        else
++            attach.offset = {x=0, y=2}
++        end
++        if attach.type == 'tm' then attach.type = 'bm' end
++    end
+     local pos = args.pos or {x=attach.major.T.x + attach.major.T.w/2, y=attach.major.T.y + attach.major.T.h/2}
+     local button = args.button or {button = localize('b_next'), func = 'tut_next'}
+     args.highlight = args.highlight or {}
+@@ -2258,7 +2397,6 @@
+         func = function()
+             if G.OVERLAY_TUTORIAL and G.OVERLAY_TUTORIAL.step == step and
+             not G.OVERLAY_TUTORIAL.step_complete then
+-                args.text_key = (G.F_MOBILE and G.localization.misc.tutorial[args.text_key..'_touch']) and args.text_key..'_touch' or args.text_key
+                 G.CONTROLLER.interrupt.focus = true
+                 G.OVERLAY_TUTORIAL.Jimbo = G.OVERLAY_TUTORIAL.Jimbo or Card_Character(pos)
+                 if type(args.highlight) == 'function' then args.highlight = args.highlight() end
+@@ -2280,9 +2418,17 @@
+                       }
+                     args.highlight[#args.highlight+1] = G.OVERLAY_TUTORIAL.content
+                 end
+-                G.DISABLED_BUTTONS = args.disabled_buttons
+                 if args.button_listen then G.OVERLAY_TUTORIAL.button_listen = args.button_listen end
+-                if not args.no_button then G.OVERLAY_TUTORIAL.Jimbo:add_button(button.button, button.func, button.colour, button.update_func, true) end
++                if not args.no_button then
++                    G.OVERLAY_TUTORIAL.Jimbo:add_button(button.button, button.func, button.colour, button.update_func, true)
++                    if G.F_PORTRAIT and G.OVERLAY_TUTORIAL.Jimbo.children.button and G.OVERLAY_TUTORIAL.Jimbo.children.speech_bubble then
++                        G.OVERLAY_TUTORIAL.Jimbo.children.button:set_alignment({
++                            major = G.OVERLAY_TUTORIAL.Jimbo.children.speech_bubble,
++                            type = 'bm',
++                            offset = {x = 0, y = 0.2},
++                        })
++                    end
++                end
+                 G.OVERLAY_TUTORIAL.Jimbo:say_stuff(2*(#(G.localization.misc.tutorial[args.text_key] or {}))+1)
+                 if args.snap_to then
+                     G.E_MANAGER:add_event(Event({
+@@ -2385,10 +2531,8 @@
+ end
+ 
+ function get_new_boss()
+-
+     G.GAME.perscribed_bosses = G.GAME.perscribed_bosses or {
+     }
+-    
+     if G.GAME.perscribed_bosses and G.GAME.perscribed_bosses[G.GAME.round_resets.ante] then 
+         local ret_boss = G.GAME.perscribed_bosses[G.GAME.round_resets.ante] 
+         G.GAME.perscribed_bosses[G.GAME.round_resets.ante] = nil
+@@ -2400,20 +2544,11 @@
+     local eligible_bosses = {}
+     for k, v in pairs(G.P_BLINDS) do
+         if not v.boss then
+-        else
+-            if not G.FTP_LOCKED then 
+-                if not v.boss.showdown and (v.boss.min <= math.max(1, G.GAME.round_resets.ante) and ((math.max(1, G.GAME.round_resets.ante))%G.GAME.win_ante ~= 0 or G.GAME.round_resets.ante < 2)) then
+-                    eligible_bosses[k] = true
+-                elseif v.boss.showdown and (G.GAME.round_resets.ante)%G.GAME.win_ante == 0 and G.GAME.round_resets.ante >= 2 then
+-                    eligible_bosses[k] = true
+-                end
+-            else
+-                if not v.boss.showdown and (v.boss.min <= math.max(1, G.GAME.round_resets.ante) and (G.GAME.round_resets.ante < 6)) then
+-                    eligible_bosses[k] = true
+-                elseif v.boss.showdown and G.GAME.round_resets.ante >= 6 and G.GAME.round_resets.ante >= 2 then
+-                    eligible_bosses[k] = true
+-                end
+-            end
++
++        elseif not v.boss.showdown and (v.boss.min <= math.max(1, G.GAME.round_resets.ante) and ((math.max(1, G.GAME.round_resets.ante))%G.GAME.win_ante ~= 0 or G.GAME.round_resets.ante < 2)) then
++            eligible_bosses[k] = true
++        elseif v.boss.showdown and (G.GAME.round_resets.ante)%G.GAME.win_ante == 0 and G.GAME.round_resets.ante >= 2 then
++            eligible_bosses[k] = true
+         end
+     end
+     for k, v in pairs(G.GAME.banned_keys) do

@@ -1,0 +1,12 @@
+--- a/engine/http_manager.lua
++++ b/engine/http_manager.lua
+@@ -10,7 +10,8 @@
+     return str
+ end
+ 
+-if jit.arch == 'arm64' or jit.arch == 'arm' then jit.off() end
++if (love.system.getOS() == 'OS X' )and (jit.arch == 'arm64' or jit.arch == 'arm') then jit.off() end
++
+ IN_CHANNEL = love.thread.getChannel("http_request")
+ OUT_CHANNEL = love.thread.getChannel("http_response")
+ 

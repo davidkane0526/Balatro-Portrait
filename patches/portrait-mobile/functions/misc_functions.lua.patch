@@ -1,0 +1,717 @@
+--- a/functions/misc_functions.lua
++++ b/functions/misc_functions.lua
+@@ -60,6 +60,130 @@
+   return res_option
+ end
+ 
++local function _version_parts(version)
++  local parts = {}
++  version = tostring(version or "")
++
++  for number in version:gmatch("%d+") do
++    parts[#parts + 1] = tonumber(number)
++  end
++
++  return parts
++end
++
++function compare_version_strings(a, b)
++  local a_parts = _version_parts(a)
++  local b_parts = _version_parts(b)
++  local count = math.max(#a_parts, #b_parts)
++
++  for i = 1, count do
++    local left = a_parts[i] or 0
++    local right = b_parts[i] or 0
++    if left ~= right then
++      return left < right and -1 or 1
++    end
++  end
++
++  return 0
++end
++
++function version_lt(a, b)
++  return compare_version_strings(a, b) < 0
++end
++
++function version_gte(a, b)
++  return compare_version_strings(a, b) >= 0
++end
++
++-- True when text entry goes through the device's own keyboard. Balatro also has
++-- an on-screen keyboard for controllers, and on a phone both used to open at
++-- once: the system keyboard over the bottom half and the game's own drawn behind
++-- the menu, whose buttons stayed clickable through it (#44).
++function uses_system_keyboard()
++    if not (love and love.system and love.system.getOS) then return false end
++    local os_name = love.system.getOS()
++    return os_name == 'Android' or os_name == 'iOS'
++end
++
++-- The device keyboard covers the bottom of the screen and the game knows nothing
++-- about it, so a field low in a menu stays hidden behind it while you type (#44,
++-- the seed box). Lift the whole menu until the focused field sits near the top,
++-- then put it back when the keyboard closes.
++local keyboard_lift_target = 0.22
++
++function portrait_lift_for_keyboard()
++  local box = G and G.OVERLAY_MENU
++  local hook = G and G.CONTROLLER and G.CONTROLLER.text_input_hook
++  if not (box and hook and hook.T and G.ROOM and G.ROOM.T and G.F_PORTRAIT) then return end
++  if box.portrait_keyboard_lift then return end
++
++  local lift = hook.T.y - (G.ROOM.T.h or 20)*keyboard_lift_target
++  if lift <= 0 then return end
++
++  box.portrait_keyboard_lift = lift
++  box.alignment.offset.y = (box.alignment.offset.y or 0) - lift
++  if box.align_to_major then box:align_to_major() end
++end
++
++function portrait_drop_after_keyboard()
++  local box = G and G.OVERLAY_MENU
++  if not (box and box.portrait_keyboard_lift) then return end
++
++  box.alignment.offset.y = (box.alignment.offset.y or 0) + box.portrait_keyboard_lift
++  box.portrait_keyboard_lift = nil
++  if box.align_to_major then box:align_to_major() end
++end
++
++-- The keyboard can go away without a key the game sees: the chevron under Gboard,
++-- a back swipe. SDL stops text input when it does, and the edit ends as Enter ends
++-- it, or the menu stays lifted over nothing (#4).
++local text_input_asked = false
++
++-- Every frame. A mod can end the edit on its own too: Cryptid has its own
++-- text_input_key, which lets go of the field and leaves the rest to nobody.
++function portrait_watch_text_input()
++  if not text_input_asked then return end
++  if not G.CONTROLLER.text_input_hook then
++    set_mobile_text_input(false)
++  elseif love.keyboard.hasTextInput and not love.keyboard.hasTextInput() then
++    G.FUNCS.text_input_key({key = 'return'})
++  end
++end
++
++-- A tap beside the field ends the edit too, for a keyboard that closed without
++-- word. The field itself is left alone: that tap moves the cursor or reopens it.
++function portrait_tap_ends_edit(target)
++  local hook = G.CONTROLLER.text_input_hook
++  if not (hook and uses_system_keyboard()) then return end
++  local node = hook
++  while node do
++    if node == target then return end
++    if node.config and node.config.button == 'select_text_input' then break end
++    node = node.parent
++  end
++  G.FUNCS.text_input_key({key = 'return'})
++end
++
++function set_mobile_text_input(enabled)
++  text_input_asked = enabled and true or false
++  if uses_system_keyboard() then
++    if enabled then portrait_lift_for_keyboard() else portrait_drop_after_keyboard() end
++  end
++
++  if not (love and love.keyboard and love.keyboard.setTextInput and love.system and love.system.getOS) then
++    return
++  end
++
++  local os_name = love.system.getOS()
++  if os_name ~= 'Android' and os_name ~= 'iOS' then
++    return
++  end
++
++  pcall(function()
++    love.keyboard.setTextInput(enabled and true or false)
++  end)
++end
++
+ function timer_checkpoint(label, type, reset)
+   G.PREV_GARB = G.PREV_GARB or 0
+   if not G.F_ENABLE_PERF_OVERLAY then return end
+@@ -103,27 +227,24 @@
+ end
+ 
+ function boot_timer(_label, _next, progress)
+-
+-  if not G.F_HIDE_LOADING_BAR then
+-    progress = progress or 0
+-    G.LOADING = G.LOADING or {
+-      font = love.graphics.setNewFont("resources/fonts/m6x11plus.ttf", 20),
+-      love.graphics.dis
+-    }
+-    local realw, realh = love.window.getMode()
+-    love.graphics.setCanvas()
+-    love.graphics.push()
+-    love.graphics.setShader()
+-    love.graphics.clear(0,0,0,1)
+-    love.graphics.setColor(0.6, 0.8, 0.9,1)
+-    if progress > 0 then love.graphics.rectangle('fill', realw/2 - 150, realh/2 - 15, progress*300, 30, 5) end
+-    love.graphics.setColor(1, 1, 1,1)
+-    love.graphics.setLineWidth(3)
+-    love.graphics.rectangle('line', realw/2 - 150, realh/2 - 15, 300, 30, 5)
+-    if G.F_VERBOSE and not _RELEASE_MODE then love.graphics.print("LOADING: ".._next, realw/2 - 150, realh/2 +40) end
+-    love.graphics.pop()
+-    love.graphics.present()
+-  end
++  progress = progress or 0
++  G.LOADING = G.LOADING or {
++    font = love.graphics.setNewFont("resources/fonts/m6x11plus.ttf", 20),
++    love.graphics.dis
++  }
++  local realw, realh = love.window.getMode()
++  love.graphics.setCanvas()
++  love.graphics.push()
++  love.graphics.setShader()
++  love.graphics.clear(0,0,0,1)
++  love.graphics.setColor(0.6, 0.8, 0.9,1)
++  if progress > 0 then love.graphics.rectangle('fill', realw/2 - 150, realh/2 - 15, progress*300, 30, 5) end
++  love.graphics.setColor(1, 1, 1,1)
++  love.graphics.setLineWidth(3)
++  love.graphics.rectangle('line', realw/2 - 150, realh/2 - 15, 300, 30, 5)
++  if G.F_VERBOSE and not _RELEASE_MODE then love.graphics.print("LOADING: ".._next, realw/2 - 150, realh/2 +40) end
++  love.graphics.pop()
++  love.graphics.present()
+ 
+   G.ARGS.bt = G.ARGS.bt or love.timer.getTime()
+   G.ARGS.bt = love.timer.getTime()
+@@ -697,6 +818,23 @@
+ 
+ function play_sound(sound_code, per, vol)
+   if G.F_MUTE then return end
++  
++  if love and love.system and love.system.getOS and love.system.getOS() == 'Android' and love.system.vibrate and haptics_enabled() then
++    if sound_code == 'button1' or sound_code == 'button2' or sound_code == 'paper1' then
++      portrait_vibrate(0.01)
++    elseif sound_code == 'card1' or sound_code == 'cardSlide1' or sound_code == 'cardSlide2' then
++      portrait_vibrate(0.012)
++    elseif sound_code == 'cardFan2' then
++      portrait_vibrate(0.018)
++    elseif sound_code == 'coin1' or sound_code == 'coin2' or sound_code == 'chips1' or sound_code == 'chips2' then
++      portrait_vibrate(0.02)
++    elseif sound_code == 'tarot2' or sound_code == 'timpani' or sound_code == 'whoosh1' or sound_code == 'tarot1' or sound_code == 'tarotinfo' then
++      portrait_vibrate(0.03)
++    elseif sound_code == 'cancel' or sound_code == 'error' then
++      portrait_vibrate(0.04)
++    end
++  end
++
+   if sound_code and G.SETTINGS.SOUND.volume > 0.001 then
+     G.ARGS.play_sound = G.ARGS.play_sound or {}
+     G.ARGS.play_sound.type = 'sound'
+@@ -934,6 +1072,7 @@
+   elseif G.GAME.modifiers.scaling == 2 then 
+     local amounts = {
+       300,  900, 2600,  8000,  20000,  36000,  60000,  100000
++      --300,  900, 2400,  7000,  18000,  32000,  56000,  90000
+     }
+     if ante < 1 then return 100 end
+     if ante <= 8 then return amounts[ante] end
+@@ -944,6 +1083,7 @@
+   elseif G.GAME.modifiers.scaling == 3 then 
+     local amounts = {
+       300,  1000, 3200,  9000,  25000,  60000,  110000,  200000
++      --300,  1000, 3000,  8000,  22000,  50000,  90000,  180000
+     }
+     if ante < 1 then return 100 end
+     if ante <= 8 then return amounts[ante] end
+@@ -1015,12 +1155,6 @@
+   end
+ end
+ 
+-function analytic_event(_name, ...)
+-  if G.F_MOBILE and love.platform and love.platform.event then
+-    love.platform.event(_name, ...)
+-  end
+-end
+-
+ function check_and_set_high_score(score, amt)
+   if not amt or type(amt) ~= 'number' then return end
+   if G.GAME.round_scores[score] and math.floor(amt) > G.GAME.round_scores[score].amt then
+@@ -1065,8 +1199,7 @@
+ end
+ 
+ function get_joker_win_sticker(_center, index)
+-  if G.PROFILES[G.SETTINGS.profile].joker_usage and
+-  G.PROFILES[G.SETTINGS.profile].joker_usage[_center.key] and
++  if G.PROFILES[G.SETTINGS.profile].joker_usage[_center.key] and
+   G.PROFILES[G.SETTINGS.profile].joker_usage[_center.key].wins then 
+     local _w = 0
+     for k, v in pairs(G.PROFILES[G.SETTINGS.profile].joker_usage[_center.key].wins) do
+@@ -1264,18 +1397,6 @@
+   G:save_settings()
+ end
+ 
+-function check_profile(_profile_tab)
+-  local _deleted, _version = true, -1
+-  if _profile_tab then
+-    if _profile_tab.deleted then
+-      _deleted, _version = true, _profile_tab.ver or 0
+-    elseif _profile_tab.progress then
+-      _deleted, _version = false, _profile_tab.ver or 0
+-    end
+-  end
+-  return _deleted, _version
+-end
+-
+ function set_profile_progress()
+   G.PROGRESS = G.PROGRESS or {
+     joker_stickers = {tally = 0, of = 0},
+@@ -1471,8 +1592,6 @@
+ 
+ function save_run()
+   if G.F_NO_SAVING == true then return end
+-  if G.FTP_LOCKED and G.GAME.round_resets.ante > 6 and G.GAME.blind:get_type() == 'Boss' then return end
+-
+   local cardAreas = {}
+   for k, v in pairs(G) do
+     if (type(v) == "table") and v.is and v:is(CardArea) then 
+@@ -1499,7 +1618,6 @@
+     BACK = G.GAME.selected_back:save(),
+     VERSION = G.VERSION
+   }
+-
+   G.ARGS.save_run = G.culled_table
+ 
+   G.FILE_HANDLER = G.FILE_HANDLER or {}
+@@ -1508,8 +1626,7 @@
+ end
+ 
+ function remove_save()
+-  love.mod_filesystem.remove(G.SETTINGS.profile..'/save.jkr')
+-  G.FILES[G.SETTINGS.profile..'/save.jkr'] = nil
++  love.filesystem.remove(G.SETTINGS.profile..'/save.jkr')
+   G.SAVED_GAME = nil
+   G.FILE_HANDLER.run = nil
+ end
+@@ -1539,7 +1656,7 @@
+     legendary = G.C.RARITY[4],
+     enhanced = G.C.SECONDARY_SET.Enhanced
+   }
+-  return G.ARGS.LOC_COLOURS[_c] or _default or G.C.BLACK
++  return G.ARGS.LOC_COLOURS[_c] or _default or G.C.UI.TEXT_DARK
+ end
+ 
+ function init_localization()
+@@ -1607,6 +1724,45 @@
+   end
+ end
+ 
++function convert_save_to_meta()
++  if love.filesystem.getInfo(G.SETTINGS.profile..'/'..'unlocked_jokers.jkr') then 
++    local _meta = {
++      unlocked = {},
++      alerted = {},
++      discovered = {}
++    }
++    if love.filesystem.getInfo(G.SETTINGS.profile..'/'..'unlocked_jokers.jkr') then
++      for line in string.gmatch( (get_compressed(G.SETTINGS.profile..'/'..'unlocked_jokers.jkr') or '').. "\n", "([^\n]*)\n") do
++        local key = line:gsub("%s+", "")
++        if key and (key ~= '') then 
++          _meta.unlocked[key] = true
++        end
++      end
++    end
++    if love.filesystem.getInfo(G.SETTINGS.profile..'/'..'discovered_jokers.jkr') then
++      for line in string.gmatch( (get_compressed(G.SETTINGS.profile..'/'..'discovered_jokers.jkr') or '').. "\n", "([^\n]*)\n") do
++        local key = line:gsub("%s+", "")
++        if key and (key ~= '') then 
++          _meta.discovered[key] = true
++        end
++      end
++    end
++    if love.filesystem.getInfo(G.SETTINGS.profile..'/'..'alerted_jokers.jkr') then
++      for line in string.gmatch( (get_compressed(G.SETTINGS.profile..'/'..'alerted_jokers.jkr') or '').. "\n", "([^\n]*)\n") do
++        local key = line:gsub("%s+", "")
++        if key and (key ~= '') then 
++          _meta.alerted[key] = true
++        end
++      end
++    end
++    love.filesystem.remove(G.SETTINGS.profile..'/'..'unlocked_jokers.jkr')
++    love.filesystem.remove(G.SETTINGS.profile..'/'..'discovered_jokers.jkr')
++    love.filesystem.remove(G.SETTINGS.profile..'/'..'alerted_jokers.jkr')
++
++    compress_and_save( G.SETTINGS.profile..'/'..'meta.jkr', STR_PACK(_meta))
++  end
++end
++
+ function card_from_control(control)
+   G.playing_card = (G.playing_card and G.playing_card + 1) or 1
+   local _card = Card(G.deck.T.x, G.deck.T.y, G.CARD_W, G.CARD_H, G.P_CARDS[control.s..'_'..control.r], G.P_CENTERS[control.e or 'c_base'], {playing_card = G.playing_card})
+@@ -1744,7 +1900,8 @@
+           assembled_string = assembled_string..(type(subpart) == 'string' and subpart or args.vars[tonumber(subpart[1])] or 'ERROR')
+         end
+         local desc_scale = G.LANG.font.DESCSCALE
+-        if G.F_MOBILE then desc_scale = desc_scale*(args.type == 'tutorial' and 1.5 or 1.45) end
++        if G.F_MOBILE_UI then desc_scale = desc_scale*1.5 end
++        if args.desc_scale then desc_scale = desc_scale*args.desc_scale end
+         if args.type == 'name' then
+           final_line[#final_line+1] = {n=G.UIT.O, config={
+             object = DynaText({string = {assembled_string},
+@@ -1859,6 +2016,9 @@
+     reroll_cost = 5,
+     joker_slots = 5,
+     ante_scaling = 1,
++    play_limit = 5,
++    discard_limit = 5,
++    no_limit = '',
+     consumable_slots = 2,
+     no_faces = false,
+     erratic_suits_and_ranks = false,
+@@ -1873,11 +2033,6 @@
+   end
+ end
+ 
+-function DB_PRINT(key, val)
+-  DB_TAB = DB_TAB or {}
+-  DB_TAB[key] = val
+-end
+-
+ --SOUND
+ function PLAY_SOUND(args)
+   args.per = args.per or 1
+@@ -1894,9 +2049,6 @@
+   s.created_on_state = args.state
+   s.sfx_handled = 0
+   s.transition_timer = 0
+-  if s.sound == nil then
+-    return s
+-  end
+   SET_SFX(s, args)
+   love.audio.play(s.sound)
+   return s
+@@ -1913,7 +2065,6 @@
+ end
+ 
+ function SET_SFX(s, args)
+-  if s.sound == nil then return end
+   if string.find(s.sound_code,'music') then 
+       if s.sound_code == args.desired_track then
+           s.current_volume = s.current_volume or 1
+@@ -1953,7 +2104,7 @@
+   for k, v in pairs(SOURCES) do
+     local i=1
+     while i <= #v do
+-        if v[i].sound == nil or not v[i].sound:isPlaying() then
++        if not v[i].sound:isPlaying() then
+             table.remove(v, i)
+         else
+             i = i + 1
+@@ -2014,314 +2165,3 @@
+       end
+   end
+ end
+-
+-function profile_init_table()
+-  return {
+-      MEMORY = {
+-          deck = 'Red Deck',
+-          stake = 1,
+-      },
+-      stake = 1,
+-      
+-      high_scores = {
+-          hand = {label = 'Best Hand', amt = 0},
+-          furthest_round = {label = 'Highest Round', amt = 0},
+-          furthest_ante = {label = 'Highest Ante', amt = 0},
+-          most_money = {label = 'Most Money', amt = 0},
+-          boss_streak = {label = 'Most Bosses in a Row', amt = 0},
+-          collection = {label = 'Collection', amt = 0, tot = 1},
+-          win_streak = {label = 'Best Win Streak', amt = 0},
+-          current_streak = {label = '', amt = 0},
+-          poker_hand = {label = 'Most Played Hand', amt = 0}
+-      },
+-  
+-      career_stats = {
+-          c_round_interest_cap_streak = 0,
+-          c_dollars_earned = 0,
+-          c_shop_dollars_spent = 0,
+-          c_tarots_bought = 0,
+-          c_planets_bought = 0,
+-          c_playing_cards_bought = 0,
+-          c_vouchers_bought = 0,
+-          c_tarot_reading_used = 0,
+-          c_planetarium_used = 0,
+-          c_shop_rerolls = 0,
+-          c_cards_played = 0,
+-          c_cards_discarded = 0,
+-          c_losses = 0,
+-          c_wins = 0,
+-          c_rounds = 0,
+-          c_hands_played = 0,
+-          c_face_cards_played = 0,
+-          c_jokers_sold = 0,
+-          c_cards_sold = 0,
+-          c_single_hand_round_streak = 0,
+-      },
+-      progress = {
+-
+-      },
+-      joker_usage = {},
+-      consumeable_usage = {},
+-      voucher_usage = {},
+-      hand_usage = {},
+-      deck_usage = {},
+-      deck_stakes = {},
+-      challenges_unlocked = nil,
+-      challenge_progress = {
+-          completed = {},
+-          unlocked = {}
+-      }
+-  }
+-end
+-
+-function create_drag_target_from_card(_card)
+-  if _card and G.STAGE == G.STAGES.RUN then
+-      G.DRAG_TARGETS = G.DRAG_TARGETS or {
+-          S_buy =         Moveable{T={x = G.jokers.T.x, y = G.jokers.T.y - 0.1, w = G.consumeables.T.x + G.consumeables.T.w - G.jokers.T.x, h = G.jokers.T.h+0.6}},
+-          S_buy_and_use=  Moveable{T={x = G.deck.T.x + 0.2, y = G.deck.T.y - 5.1, w = G.deck.T.w-0.1, h = 4.5}},
+-          C_sell =        Moveable{T={x = G.jokers.T.x, y = G.jokers.T.y - 0.2, w = G.jokers.T.w, h = G.jokers.T.h+0.6}},
+-          J_sell =        Moveable{T={x = G.consumeables.T.x+0.3, y = G.consumeables.T.y - 0.2, w = G.consumeables.T.w-0.3, h = G.consumeables.T.h+0.6}},
+-          C_use =         Moveable{T={x = G.deck.T.x + 0.2, y = G.deck.T.y - 5.1, w = G.deck.T.w-0.1, h =4.5}},
+-          P_select =      Moveable{T={x = G.play.T.x, y = G.play.T.y - 2, w = G.play.T.w + 2, h = G.play.T.h + 1}},
+-      }
+-
+-      if _card.area and (_card.area == G.shop_jokers or _card.area == G.shop_vouchers or _card.area == G.shop_booster) then 
+-          local buy_loc = copy_table(localize((_card.area == G.shop_vouchers and 'ml_redeem_target') or (_card.area == G.shop_booster and 'ml_open_target') or 'ml_buy_target'))
+-          buy_loc[#buy_loc + 1] = '$'.._card.cost
+-          drag_target({ cover = G.DRAG_TARGETS.S_buy, colour = adjust_alpha(G.C.GREEN, 0.9), text = buy_loc,
+-              card = _card,
+-              active_check = (function(other)
+-                  return G.FUNCS.can_buy(other)
+-              end),  
+-              release_func = (function(other)
+-                  if other.area == G.shop_jokers and G.FUNCS.can_buy(other) then 
+-                      if G.OVERLAY_TUTORIAL and G.OVERLAY_TUTORIAL.button_listen == 'buy_from_shop' then
+-                        G.FUNCS.tut_next()
+-                      end
+-                      G.FUNCS.buy_from_shop({config = {
+-                          ref_table = other,
+-                          id = 'buy'
+-                      }})
+-                      return
+-                  elseif other.area == G.shop_vouchers and G.FUNCS.can_buy(other) then
+-                      G.FUNCS.use_card({config={ref_table = other}})
+-                  elseif other.area == G.shop_booster and G.FUNCS.can_buy(other) then
+-                      G.FUNCS.use_card({config={ref_table = other}})
+-                  end
+-              end)
+-          })
+-
+-          if G.FUNCS.can_buy_and_use(_card) then
+-              local buy_use_loc = copy_table(localize('ml_buy_and_use_target'))
+-              buy_use_loc[#buy_use_loc + 1] = '$'.._card.cost
+-              drag_target({ cover = G.DRAG_TARGETS.S_buy_and_use, colour = adjust_alpha(G.C.ORANGE, 0.9),text=buy_use_loc,
+-              card = _card,
+-              active_check = (function(other)
+-                  return G.FUNCS.can_buy_and_use(other)
+-              end),  
+-              release_func = (function(other)
+-                  if G.FUNCS.can_buy_and_use(other) then 
+-                      G.FUNCS.buy_from_shop({config = {
+-                          ref_table = other,
+-                          id = 'buy_and_use'
+-                      }})
+-                      return
+-                  end
+-              end)
+-              })
+-          end
+-      end
+-
+-      if _card.area and (_card.area == G.pack_cards) then
+-          if _card.ability.consumeable and not (_card.ability.set == 'Planet') then
+-              drag_target({ cover = G.DRAG_TARGETS.C_use, colour = adjust_alpha(G.C.RED, 0.9),text = {localize('b_use')},
+-                  card = _card,
+-                  active_check = (function(other)
+-                      return other:can_use_consumeable()
+-                  end),  
+-                  release_func = (function(other)
+-                      if other:can_use_consumeable() then
+-                        G.FUNCS.use_card({config={ref_table = other}})
+-                      end
+-                  end)
+-              })
+-          else 
+-              drag_target({ cover = G.DRAG_TARGETS.P_select, colour = adjust_alpha(G.C.GREEN, 0.9), text = {localize('b_select')},
+-                  card = _card,
+-                  active_check = (function(other)
+-                      return G.FUNCS.can_select_card(other)
+-                  end),  
+-                  release_func = (function(other)
+-                      if G.FUNCS.can_select_card(other) then 
+-                          G.FUNCS.use_card({config={ref_table = other}})
+-                      end
+-                  end)
+-              })
+-          end
+-      end
+-
+-      if _card.area and (_card.area == G.jokers or _card.area == G.consumeables) then 
+-          local sell_loc = copy_table(localize('ml_sell_target'))
+-          sell_loc[#sell_loc + 1] = '$'..(_card.facing == 'back' and '?' or _card.sell_cost)
+-          drag_target({ cover = _card.area == G.consumeables and G.DRAG_TARGETS.C_sell or G.DRAG_TARGETS.J_sell, colour = adjust_alpha(G.C.GOLD, 0.9),text = sell_loc,
+-              card = _card,
+-              active_check = (function(other)
+-                  return other:can_sell_card()
+-              end),    
+-              release_func = (function(other)
+-                  G.FUNCS.sell_card{config={ref_table=other}}
+-              end)
+-          })
+-          if _card.area == G.consumeables then
+-              drag_target({ cover = G.DRAG_TARGETS.C_use, colour = adjust_alpha(G.C.RED, 0.9),text = {localize('b_use')},
+-              card = _card,
+-              active_check = (function(other)
+-                  return other:can_use_consumeable()
+-              end),
+-              release_func = (function(other)
+-                  if other:can_use_consumeable() then
+-                    G.FUNCS.use_card({config={ref_table = other}})
+-                    if G.OVERLAY_TUTORIAL and G.OVERLAY_TUTORIAL.button_listen == 'use_card' then
+-                      G.FUNCS.tut_next()
+-                    end
+-                  end
+-              end)
+-          })
+-          end
+-      end
+-  end
+-end
+-
+--------------------------------------
+---CLOUD SAVE
+--------------------------------------
+-function get_cloud_flag(_flag)
+-  if G.SETTINGS[_flag] then 
+-      set_cloud_flag(_flag)
+-      return true
+-  end
+-  if G.PROFILES then
+-      for k, v in pairs(G.PROFILES) do
+-          v.flags = v.flags or {}
+-          if v.flags[_flag] then return true end
+-      end
+-  end
+-end
+-
+-function set_cloud_flag(_flag)
+-  G.SETTINGS[_flag] = true
+-  if G.PROFILES then
+-      for k, v in pairs(G.PROFILES) do
+-          v.flags = v.flags or {}
+-          v.flags[_flag] = true
+-      end
+-  end
+-end
+-
+-function update_timestamp(_dir)
+-    local save_string = os.date('%Y%m%d%H%M%S', os.time(os.date('!*t')))
+-    love.mod_filesystem.write((_dir and _dir..'/' or '')..'DT.cloud9',save_string)
+-end
+-
+-function get_timestamp(_dir)
+-  local file_data = love.mod_filesystem.getInfo((_dir and _dir..'/' or '')..'DT.cloud9')
+-  if file_data ~= nil then
+-      local file_string = love.mod_filesystem.read((_dir and _dir..'/' or '')..'DT.cloud9')
+-      return file_string
+-  end
+-  
+-  return '0'
+-end
+-
+-function fs_DELETE( item, keep_root )
+-  if love.mod_filesystem.getInfo( item , "directory" ) then
+-      for _, child in ipairs( love.mod_filesystem.getDirectoryItems( item )) do
+-          fs_DELETE( item .. '/' .. child )
+-          love.mod_filesystem.remove( item .. '/' .. child )
+-      end
+-  elseif love.mod_filesystem.getInfo( item ) then
+-      love.mod_filesystem.remove( item )
+-  end
+-  if not keep_root then love.mod_filesystem.remove( item ) end
+-end
+-
+-function fs_COPY_DIR(_from, _to)
+-  if (not _from) or (not _to) or (not love.mod_filesystem.getInfo(_from)) or (love.mod_filesystem.getInfo(_to)) then return end 
+-
+-  if love.mod_filesystem.getInfo( _from , "file" ) then
+-    local file_string = love.mod_filesystem.read(_from)
+-    love.mod_filesystem.write(_to ,file_string)
+-  elseif love.mod_filesystem.getInfo( _from ) then
+-    love.mod_filesystem.createDirectory(_to)
+-    for _, child in ipairs( love.mod_filesystem.getDirectoryItems( _from )) do
+-      fs_COPY_DIR( _from .. '/' .. child, _to..'/'..child )
+-    end
+-  end
+-end
+-
+-function move_to_dir(_filename, prefix_dir, target_dir)
+-  if prefix_dir and not love.mod_filesystem.getInfo(prefix_dir) then return end
+-  if _filename and not love.mod_filesystem.getInfo((prefix_dir and prefix_dir..'/' or '').._filename) then return end
+-
+-  if prefix_dir then
+-      if not love.mod_filesystem.getInfo(target_dir..'/'..prefix_dir) then love.mod_filesystem.createDirectory( target_dir..'/'..prefix_dir ) end
+-      prefix_dir = prefix_dir..'/'
+-  else prefix_dir = '' end
+-
+-  compress_and_save2( target_dir..'/'..prefix_dir.._filename, STR_UNPACK(get_compressed(prefix_dir.._filename)))
+-end
+-
+-function backup_local()
+-  --Backup the contents of local save into a new backup folder
+-  if love.mod_filesystem.getInfo('backup') then
+-    local backups = love.mod_filesystem.getDirectoryItems( 'backup' )
+-
+-    if #backups > 3 then
+-      local oldest = nil
+-      for _, v in ipairs(backups) do
+-        if (not oldest) or oldest > v then 
+-          oldest = v
+-        end
+-      end
+-      if oldest then fs_DELETE('backup/'..oldest) end
+-    end
+-    local backup_dir = 'backup/'..os.date('%Y%m%d%H%M%S', os.time(os.date('!*t')))
+-
+-    fs_COPY_DIR('local', backup_dir)
+-  end
+-end
+-
+-function accept_remote()
+-  backup_local()
+-  fs_DELETE('local', true)
+-  fs_COPY_DIR('remote', 'local')
+-end
+-
+-function accept_local()
+-  update_timestamp('local')
+-  fs_DELETE('remote', true)
+-  fs_COPY_DIR('local', 'remote')
+-end
+-
+-function rectify_filesystem()
+-  local file_data = love.mod_filesystem.getInfo('local')
+-  if not file_data then
+-      --First, create local, backup, and remote dirs
+-      love.mod_filesystem.createDirectory('local')
+-      love.mod_filesystem.createDirectory('remote')
+-      love.mod_filesystem.createDirectory('backup')
+-
+-      --Move settings file into local, parse and remove 'return'
+-      move_to_dir('settings.jkr', nil, 'local')
+-      for i = 1, 3 do
+-        move_to_dir('meta.jkr', ''..i, 'local')
+-        move_to_dir('profile.jkr', ''..i, 'local')
+-        move_to_dir('save.jkr', ''..i, 'local')
+-      end
+-
+-      update_timestamp('local')
+-
+-      --populate first backup
+-      backup_local()
+-  end
+-end

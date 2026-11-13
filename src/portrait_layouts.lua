@@ -1,0 +1,1386 @@
+--Layout styles beyond Classic (Options > Settings > Game > Layout, see
+--portrait_layout in portrait_config.lua), applied on the spot, mid-run too.
+--
+--Both styles follow the same rules, which is what keeps them tidy:
+--  * One column. The HUD, both card shelves, the hand, the score line and the
+--    buttons share one width W and one left edge (portrait_frame).
+--  * Three text sizes: labels (L), values (V), and the large numbers the game
+--    sizes itself (round score, chips x mult, the blind's target).
+--  * One surface: dark rounded panels on the felt, tiles in the blind colour.
+--  * The space a tall phone leaves over is shared out evenly between the card
+--    shelves and the stage (portrait_place_areas), never left in one hole.
+--
+--  One-Thumb  A short HUD (blind, round score, ante, round, money). Above the
+--             hand, a score line: hands left, the hand you are playing with
+--             its chips x mult, discards left. Under the hand, Discard and
+--             Play as the two biggest targets, Options and Sort below them.
+--  Focus      A full-width HUD read top to bottom: the blind and its target,
+--             the round score with a bar filling towards the target, the hand
+--             with chips x mult, then the five run stats. Nothing repeats it
+--             above the cards; one flat bar under the hand.
+--
+--Every builder keeps the element ids the game and Steamodded look up
+--(hand_chips, chip_UI_count, row_blind, row_blind_bottom, run_info_button,
+--HUD_blind_count, ...). Elements One-Thumb moves into its score line are found
+--through G.HUD as before (see UIBox:get_UIE_by_ID below).
+
+local L_BASE, V_BASE = 0.44, 0.62
+local L, V = L_BASE, V_BASE
+local EN_K = 1 -- see fit_label_scale
+local DOCK_H = 1.46 -- the hand's name over its chips x mult
+local DOCK_COMPACT_H = 1.2 -- the same, no taller than the tiles (a short room)
+local DOCK_GAP = 0.95 -- room for a selected card's lift between hand and score line
+
+--Labels are sized for the English font. A language whose font draws a
+--shorter line (Russian's Noto: a tenth shorter) gets its labels grown to
+--match, never shrunk.
+--The sizes themselves are set for the game's pixel font (m6x11, whose line
+--is as tall as its point size). Readabletro swaps in TypoQuik, whose line is
+--28% taller: labels, values and the score line's text (EN_K) are scaled back
+--to the pixel font's line, so the HUD keeps the height it was laid out for
+--(on a tablet the taller HUD pushed the joker shelf onto the score line).
+local PIXEL_LINE = 1.0 * 0.83 -- m6x11: height per point x its TEXT_HEIGHT_SCALE
+local function fit_label_scale()
+  local en, font = G.LANGUAGES['en-us'].font, G.LANG and G.LANG.font
+  if not (font and font.FONT and en and en.FONT) then return end
+  local function line(f) return f.FONT:getHeight() * f.FONTSCALE * f.TEXT_HEIGHT_SCALE end
+  EN_K = 1
+  if en.render_scale and en.render_scale > 0 then
+    local per_point = en.FONT:getHeight() / en.render_scale * en.TEXT_HEIGHT_SCALE
+    -- Only a clearly taller font; the pixel font itself stays at exactly 1.
+    if per_point > PIXEL_LINE * 1.05 then EN_K = math.max(0.75, PIXEL_LINE / per_point) end
+  end
+  L = L_BASE * EN_K * math.max(1, math.min(1.2, line(en) / line(font)))
+  V = V_BASE * EN_K
+end
+
+--Where every builder starts: the frame, and the label size for the language.
+function portrait_frame()
+  fit_label_scale()
+  local rw = (G.ROOM and G.ROOM.T and G.ROOM.T.w) or 11.6
+  local W = math.min(rw - 0.5, 11.4)
+  return (rw - W) / 2, W
+end
+
+--Re-lays out the box an element is in, once that box is built. The game
+--runs element funcs during the box's first layout too; a relayout from there
+--initialised its elements twice, so they stayed in G.MOVEABLES after the box
+--was removed and kept moving (and crashed, once what they hung off was gone).
+function portrait_relayout(e)
+  if e.T and e.UIBox and e.UIBox.UIRoot and e.UIBox.UIRoot.T then e.UIBox:recalculate() end
+end
+
+local function en_font() return G.LANGUAGES['en-us'].font end
+local function light() return G.C.UI.TEXT_LIGHT end
+
+local function text(str, scale, colour)
+  return {n=G.UIT.T, config={text = str, scale = scale, colour = colour or light(), shadow = true}}
+end
+
+--DynaText applies maxw once, when it is made. A counter that grows later
+--(money in the billions, naneinf, a long boss name) would push its tile and
+--the whole HUD past the frame, so the counters here shrink to fit_w as they
+--grow and return to their size when they shorten.
+local function fit_dynatext(e)
+  local obj = e.config.object
+  if not (obj and obj.config and obj.config.W and obj.scale and obj.scale > 0 and e.config.fit_w) then return end
+  local base = e.config.fit_base or obj.scale
+  e.config.fit_base = base
+  local natural = obj.config.W * base / obj.scale
+  local want = natural > e.config.fit_w and base * e.config.fit_w / natural or base
+  if math.abs(want - obj.scale) > 0.002 then
+    obj.scale = want
+    obj:update_text(true)
+    obj.T.w, obj.T.h = obj.config.W, obj.config.H
+    obj:align_letters()
+    -- Lay the box out again only when the text's width really moved: with
+    -- Talisman's big numbers the game re-sets these counters every frame, and
+    -- a relayout of the whole HUD each frame slowed play to a crawl.
+    if not e.config.fit_last_w or math.abs(e.config.fit_last_w - obj.config.W) > 0.01 then
+      e.config.fit_last_w = obj.config.W
+      portrait_relayout(e)
+    end
+  end
+end
+G.FUNCS.portrait_fit_text = fit_dynatext
+
+--The game's own counter funcs size their text on every change; these run
+--them first and fit what they made.
+--With fixed, the text keeps its own size and only the fit shrinks it. The
+--game shrinks these for its own narrow panel: chips and mult by their digits
+--(99,999,999,999 to a third), a hand's name by its length in bytes, three per
+--character in Japanese or Chinese ("ストレートフラッシュ" to a third too).
+local function fitted(func, fixed)
+  return function(e)
+    local obj = e.config.object
+    local before = obj and obj.scale
+    if fixed and obj and not e.config.own_scale then e.config.own_scale = obj.scale end
+    G.FUNCS[func](e)
+    if obj and obj.scale ~= before then
+      e.config.fit_base = fixed and e.config.own_scale or obj.scale
+    end
+    fit_dynatext(e)
+  end
+end
+G.FUNCS.portrait_hand_chip_UI_set = fitted('hand_chip_UI_set', true)
+
+--The round score is the number the whole round is about; these styles show
+--it larger than chip_UI_set's size (config.scale_mult), sized the same way,
+--and never wider than config.fit_w: the digit count alone did not hold it
+--with Readabletro's wider digits (99,999,999,999 ran off the screen).
+G.FUNCS.portrait_chip_UI_set = function(e)
+  local before = G.GAME.chips_text
+  G.FUNCS.chip_UI_set(e)
+  if G.GAME.chips_text ~= before or not e.config.scaled then
+    local scale = math.min(0.8, scale_number(G.GAME.chips, 1.1)) * (e.config.scale_mult or 1) * EN_K
+    if e.config.fit_w then
+      local font = (e.config.lang or G.LANG).font
+      local w = font.FONT:getWidth(tostring(G.GAME.chips_text)) * font.squish * font.FONTSCALE / G.TILESIZE
+      if w > 0 then scale = math.min(scale, e.config.fit_w / w) end
+    end
+    e.config.scaled = true
+    if math.abs(scale - (e.config.scale or 0)) > 0.002 then
+      e.config.scale = scale
+      portrait_relayout(e)
+    else
+      e.config.scale = scale
+    end
+  end
+end
+G.FUNCS.portrait_hand_mult_UI_set = fitted('hand_mult_UI_set', true)
+G.FUNCS.portrait_hand_text_UI_set = fitted('hand_text_UI_set', true)
+-- Fixed too: at the game's size the total grew the score line into the played cards.
+G.FUNCS.portrait_hand_chip_total_UI_set = fitted('hand_chip_total_UI_set', true)
+
+local function count_text(ref_table, ref_value, colour, scale, id, prefix, fit_w)
+  return {n=G.UIT.O, config={id = id, func = 'portrait_fit_text', fit_w = fit_w or 1.3, object = DynaText({string = {{ref_table = ref_table, ref_value = ref_value, prefix = prefix}}, font = en_font(), colours = {colour}, shadow = true, scale = scale})}}
+end
+
+local function stake_icon(size)
+  return {n=G.UIT.O, config={w = size, h = size, object = get_stake_sprite(G.GAME.stake or 1, size), hover = true, can_collide = false}}
+end
+
+local function hgap(w) return {n=G.UIT.C, config={minw = w}, nodes={}} end
+local function vgap(h) return {n=G.UIT.R, config={minh = h}, nodes={}} end
+
+--Width a label takes in the current language's font, in room units.
+local function text_w(str, scale)
+  local font = G.LANG.font
+  return font.FONT:getWidth(str) * font.squish * scale * font.FONTSCALE / G.TILESIZE
+end
+
+portrait_text_w = text_w
+
+--A label wider than w goes on two lines rather than shrinking to nothing:
+--split at the space nearest its middle ("Mise initiale", "Сортировать
+--руку"), or, for one long word ("Weggooimogelijkheden"), hyphenated near its
+--middle. What still overflows a line is shrunk by the row's maxw.
+function portrait_label_lines(str, w, scale)
+  if text_w(str, scale) <= w then return {str} end
+  local best, best_d
+  for pos in str:gmatch('()%s') do
+    local d = math.abs(pos - #str / 2)
+    if not best_d or d < best_d then best, best_d = pos, d end
+  end
+  if best then return {str:sub(1, best - 1), str:sub(best + 1)} end
+  -- One word a little too long only shrinks a little; a hyphen is for the
+  -- really long ones.
+  if text_w(str, scale) <= w * 1.35 then return {str} end
+  local chars = {}
+  for _, c in utf8.chars(str) do chars[#chars + 1] = c end
+  if #chars < 8 then return {str} end
+  local half = math.floor(#chars / 2)
+  return {table.concat(chars, '', 1, half) .. '-', table.concat(chars, '', half + 1)}
+end
+
+--A plain line broken at its spaces to fit room: some tooltips are one long line.
+function portrait_wrap_text(str, scale, room)
+  if text_w(str, scale) <= room then return {str} end
+  local lines, line = {}, ''
+  for word in str:gmatch('%S+') do
+    local longer = line == '' and word or line .. ' ' .. word
+    if line ~= '' and text_w(longer, scale) > room then
+      lines[#lines + 1] = line
+      line = word
+    else
+      line = longer
+    end
+  end
+  if line ~= '' then lines[#lines + 1] = line end
+  return lines
+end
+
+--The Credits are laid out for a desktop's width. Shrunk to a phone's, names came
+--out 3 px tall, so on a phone a page keeps its text size: its blocks go one under
+--the other, and a line too long for the page breaks at its spaces.
+function portrait_credits_w()
+  return G.ROOM.T.w - 1.4
+end
+
+--The size for a set of lines the Collabs page must not break: its legal text.
+function portrait_credits_line_scale(lines, scale)
+  local room = portrait_credits_w() - 2.4
+  local widest = 0
+  for _, line in ipairs(lines) do widest = math.max(widest, text_w(line, scale)) end
+  return widest > room and scale * room / widest or scale
+end
+
+local function wrapped_row(row, room)
+  local words, total = {}, 0
+  for _, node in ipairs(row.nodes) do
+    local c = node.config
+    if node.n ~= G.UIT.T or type(c.text) ~= 'string' then return nil end
+    total = total + text_w(c.text, c.scale)
+    for word in c.text:gmatch('%S+') do
+      words[#words + 1] = {text = word, scale = c.scale, colour = c.colour, shadow = c.shadow}
+    end
+  end
+  if total <= room or #words < 2 then return nil end
+
+  local lines, line, used = {}, {}, 0
+  for _, word in ipairs(words) do
+    local w = text_w(word.text .. ' ', word.scale)
+    if used + w > room and #line > 0 then
+      lines[#lines + 1] = line
+      line, used = {}, 0
+    end
+    line[#line + 1] = word
+    used = used + w
+  end
+  lines[#lines + 1] = line
+
+  local rows = {}
+  for _, words_in_line in ipairs(lines) do
+    local nodes = {}
+    for i, word in ipairs(words_in_line) do
+      nodes[i] = {n=G.UIT.T, config={text = word.text .. (i < #words_in_line and ' ' or ''), scale = word.scale, colour = word.colour, shadow = word.shadow}}
+    end
+    rows[#rows + 1] = {n=G.UIT.R, config={align = 'cm', padding = 0}, nodes = nodes}
+  end
+  return rows
+end
+
+--How wide a part of a page comes out, from its text.
+local function node_w(node)
+  local c = node.config or {}
+  if node.n == G.UIT.T then return type(c.text) == 'string' and text_w(c.text, c.scale) or 0 end
+  if node.n == G.UIT.B then return c.w or 0 end
+  local w = 0
+  for _, child in ipairs(node.nodes or {}) do
+    local cw = node_w(child)
+    w = node.n == G.UIT.C and math.max(w, cw) or w + cw
+  end
+  -- A row of rows is as wide as its widest.
+  if node.n == G.UIT.R and node.nodes and node.nodes[1] and node.nodes[1].n == G.UIT.R then
+    w = 0
+    for _, child in ipairs(node.nodes) do w = math.max(w, node_w(child)) end
+  end
+  return math.max(w + 2*(c.padding or 0), c.minw or 0)
+end
+
+--Columns side by side, too wide together, go in rows of as many as fit. They come
+--in twos, a column of names and a column of what each one did, and stay that way.
+local function regrouped_columns(row, room)
+  local total, columns = 0, 0
+  for _, child in ipairs(row.nodes) do
+    if child.n == G.UIT.C then columns = columns + 1 elseif child.n ~= G.UIT.B then return nil end
+    total = total + node_w(child)
+  end
+  if columns < 2 then return nil end
+  if total <= room or #row.nodes < 2 then return nil end
+  local kept = {}
+  for _, child in ipairs(row.nodes) do
+    if child.n == G.UIT.C then kept[#kept + 1] = child end
+  end
+  local rows, group, used = {}, {}, 0
+  for i = 1, #kept, 2 do
+    local w = node_w(kept[i]) + (kept[i + 1] and node_w(kept[i + 1]) or 0)
+    if used + w > room and #group > 0 then
+      rows[#rows + 1] = {n=G.UIT.R, config={align = 'tm', padding = 0.05}, nodes = group}
+      group, used = {}, 0
+    end
+    group[#group + 1] = kept[i]
+    group[#group + 1] = kept[i + 1]
+    used = used + w
+  end
+  rows[#rows + 1] = {n=G.UIT.R, config={align = 'tm', padding = 0.05}, nodes = group}
+  return rows
+end
+
+local function wrap_rows(node, room)
+  if type(node) ~= 'table' or not node.nodes then return end
+  if node.n == G.UIT.R and node.nodes[1] then
+    local rows = wrapped_row(node, room) or regrouped_columns(node, room)
+    if rows then
+      node.nodes = rows
+      if rows[1].nodes[1].n == G.UIT.T then return end
+    end
+  end
+  for _, child in ipairs(node.nodes) do wrap_rows(child, room) end
+end
+
+function portrait_credits_page(build)
+  return function(...)
+    local page = build(...)
+    local room = portrait_credits_w()
+    page.config.minw = room
+    page.config.padding = 0.12
+    for _, block in ipairs(page.nodes) do
+      if block.n == G.UIT.C then block.n = G.UIT.R end
+      block.config.minw = room - 0.3
+    end
+    wrap_rows(page, room - 0.8)
+    return page
+  end
+end
+
+--The label itself when it fits on one line, else its lines (create_toggle
+--takes either).
+function portrait_label_text(str, w, scale)
+  local lines = portrait_label_lines(str, w, scale)
+  return #lines > 1 and lines or str
+end
+
+local function label_rows(str, w, scale, colour)
+  local rows = {}
+  for _, line in ipairs(portrait_label_lines(str, w, scale)) do
+    rows[#rows + 1] = {n=G.UIT.R, config={align = "cm", maxw = w}, nodes={text(line, scale, colour)}}
+  end
+  return rows
+end
+
+local LINE_H = 0.4
+
+--Label over value, in the blind colour. A row of tiles shares one height:
+--tiles_h gives the height that fits the tallest label in it.
+local function tile_lines(label, w)
+  return label and #portrait_label_lines(label, w - 0.2, L) or 0
+end
+
+--Width a tile needs for its label at full size (on its lines, as split for w).
+local function label_need(label, w)
+  local need = 0
+  for _, line in ipairs(portrait_label_lines(label, w - 0.2, L)) do need = math.max(need, text_w(line, L)) end
+  return need + 0.25
+end
+
+local function tiles_h(specs)
+  local lines = 0
+  for _, sp in ipairs(specs) do lines = math.max(lines, tile_lines(sp[1], sp[2])) end
+  return 0.6 + lines * LINE_H + 0.08
+end
+
+local function tile(id, label, value_nodes, w, h, value_id)
+  local rows = label and label_rows(label, w - 0.2, L) or {}
+  rows[#rows + 1] = {n=G.UIT.R, config={id = value_id, align = "cm", minh = 0.5}, nodes=value_nodes}
+  -- minw is the inside; the padding brings the tile to exactly w.
+  return {n=G.UIT.C, config={id = id, align = "cm", minw = w - 0.08, maxw = w - 0.08, minh = (h or 0.95) - 0.08, padding = 0.04, r = 0.1, colour = G.C.DYN_UI.BOSS_MAIN}, nodes=rows}
+end
+
+local function money_text(scale, maxw)
+  return {n=G.UIT.O, config={id = 'dollar_text_UI', func = 'portrait_fit_text', fit_w = maxw, object = DynaText({string = {{ref_table = G.GAME, ref_value = 'dollars', prefix = localize('$')}}, maxw = maxw, colours = {G.C.MONEY}, font = en_font(), shadow = true, spacing = 2, bump = true, scale = scale})}}
+end
+
+local function ante_nodes()
+  return {
+    count_text(G.GAME.round_resets, 'ante', G.C.IMPORTANT, V, 'ante_UI_count', nil, 0.7),
+    {n=G.UIT.T, config={text = "/", scale = L, colour = light(), shadow = true}},
+    {n=G.UIT.T, config={ref_table = G.GAME, ref_value = 'win_ante', scale = L, colour = light(), shadow = true}},
+  }
+end
+
+--Round score: label, then the number (chip_UI_set sizes it).
+local function round_score(w, align)
+  local label = localize('k_round')..' '..localize('k_lower_score')
+  local label_w = 0
+  for _, line in ipairs(portrait_label_lines(label, w * 0.45, L)) do label_w = math.max(label_w, text_w(line, L)) end
+  return {n=G.UIT.R, config={id = 'row_dollars_chips', align = align or "cm", minw = w}, nodes={
+    {n=G.UIT.C, config={align = "cm", padding = 0.04}, nodes=label_rows(label, w * 0.45, L)},
+    {n=G.UIT.C, config={align = "cm", minh = 0.75, padding = 0.04}, nodes={
+      stake_icon(0.5),
+      hgap(0.08),
+      {n=G.UIT.T, config={ref_table = G.GAME, ref_value = 'chips_text', lang = G.LANGUAGES['en-us'], scale = 1.0, colour = light(), id = 'chip_UI_count', func = 'portrait_chip_UI_set', scale_mult = 1.25, fit_w = w - math.min(label_w, w * 0.45) - 0.9, shadow = true}},
+    }},
+  }}
+end
+
+--Hand name and chips x mult. The ids are what scoring animates and lights.
+--Stacked puts the name over the meters, both the full name_w wide; compact
+--makes the two rows no taller than the tiles beside them (a short room).
+local function hand_row(meter_w, name_w, stacked, compact)
+  local ch = G.GAME.current_round.current_hand
+  local function meter(side, colour, ref_value, id, area_id, func, flame_id)
+    local flame = {n=G.UIT.O, config={func = 'flame_handler', no_role = true, id = flame_id, object = Moveable(0,0,0,0), w = 0, h = 0, _w = 2.5, _h = 2.5}}
+    local value = {n=G.UIT.O, config={id = id, func = func, fit_w = meter_w - 0.25, object = DynaText({string = {{ref_table = ch, ref_value = ref_value}}, colours = {light()}, font = en_font(), shadow = true, float = true, scale = (compact and 0.7 or 0.9) * EN_K})}}
+    local pad = {n=G.UIT.B, config={w = 0.1, h = 0.1}}
+    return {n=G.UIT.C, config={align = side, minw = meter_w, minh = compact and 0.6 or 0.8, r = 0.1, colour = colour, id = area_id, emboss = 0.05}, nodes=
+      side == "cr" and {flame, value, pad} or {flame, pad, value}}
+  end
+  -- The level ("lvl.99", "niveau 99") keeps its room beside the name.
+  local name_fit = name_w - 0.2 - text_w(' '..localize('k_lvl')..'99', L)
+  local name = {n=G.UIT.C, config={align = "cm", minw = name_w, maxw = name_w, minh = stacked and (compact and 0.42 or 0.5) or nil}, nodes={
+    {n=G.UIT.O, config={id = 'hand_name', func = 'portrait_hand_text_UI_set', fit_w = name_fit, object = DynaText({string = {{ref_table = ch, ref_value = "handname_text"}}, colours = {light()}, shadow = true, float = true, scale = 0.6 * EN_K})}},
+    {n=G.UIT.O, config={id = 'hand_chip_total', func = 'portrait_hand_chip_total_UI_set', fit_w = name_fit, object = DynaText({string = {{ref_table = ch, ref_value = "chip_total_text"}}, colours = {light()}, shadow = true, float = true, scale = 0.6 * EN_K})}},
+    {n=G.UIT.T, config={ref_table = ch, ref_value = 'hand_level', scale = L, colour = light(), id = 'hand_level', shadow = true}},
+  }}
+  local meters = {
+    meter("cr", G.C.UI_CHIPS, 'chip_text', 'hand_chips', 'hand_chip_area', 'portrait_hand_chip_UI_set', 'flame_chips'),
+    {n=G.UIT.C, config={align = "cm", padding = 0.05}, nodes={
+      {n=G.UIT.T, config={text = "X", lang = G.LANGUAGES['en-us'], scale = 0.8 * EN_K, colour = G.C.UI_MULT, shadow = true}},
+    }},
+    meter("cl", G.C.UI_MULT, 'mult_text', 'hand_mult', 'hand_mult_area', 'portrait_hand_mult_UI_set', 'flame_mult'),
+  }
+  if stacked then
+    table.insert(meters, 3, hgap(0.06))
+    table.insert(meters, 2, hgap(0.06))
+    return {n=G.UIT.R, config={align = "cm"}, nodes={
+      {n=G.UIT.C, config={align = "cm"}, nodes={
+        {n=G.UIT.R, config={align = "cm"}, nodes={name}},
+        {n=G.UIT.R, config={align = "cm"}, nodes=meters},
+      }},
+    }}
+  end
+  table.insert(meters, 1, name)
+  return {n=G.UIT.R, config={align = "cm"}, nodes=meters}
+end
+
+--Plain-text mirror of the boss debuff lines, as in create_UIBox_HUD_blind.
+local function debuff_rows(maxw)
+  local lines = (G.GAME.blind and G.GAME.blind.loc_debuff_lines) or {}
+  local mirror = {
+    portrait_flatten_blind_line(lines[1], lines.vars),
+    portrait_flatten_blind_line(lines[2], lines.vars),
+  }
+  return {n=G.UIT.R, config={align = "cm", id = 'HUD_blind_debuff'}, nodes={
+    {n=G.UIT.R, config={align = "cm", minh = 0.3, maxw = maxw}, nodes={
+      {n=G.UIT.T, config={ref_table = {val = ''}, ref_value = 'val', scale = 0.36, colour = light(), func = 'HUD_blind_debuff_prefix'}},
+      {n=G.UIT.T, config={ref_table = mirror, ref_value = 1, scale = 0.36, colour = light(), id = 'HUD_blind_debuff_1'}},
+    }},
+    {n=G.UIT.R, config={align = "cm", minh = 0.3, maxw = maxw}, nodes={
+      {n=G.UIT.T, config={ref_table = mirror, ref_value = 2, scale = 0.36, colour = light(), id = 'HUD_blind_debuff_2'}},
+    }},
+  }}
+end
+
+--Steamodded's badge naming the mod a blind comes from. Its patch adds this
+--row to the vanilla blind panel; the portrait panels add it themselves.
+--Empty, and no height, until a modded blind fills it.
+--Height the blind's slot in the HUD keeps for that badge (Steamodded only).
+function portrait_badge_room()
+  return (G.FUNCS and G.FUNCS.HUD_blind_badge) and 0.45 or 0
+end
+
+function portrait_blind_badge_row()
+  if not (G.FUNCS and G.FUNCS.HUD_blind_badge) then return nil end
+  if portrait_wrap_smods_badge then portrait_wrap_smods_badge() end
+  return {n=G.UIT.R, config={align = "cm", r = 0.1, id = 'HUD_blind_badge', func = 'HUD_blind_badge'}, nodes={}}
+end
+
+--The blind's target and reward. HUD_blind_reward expects the reward row to
+--hold its label first and the amount second.
+local function blind_target(w)
+  return {n=G.UIT.C, config={align = "cm", minw = w}, nodes={
+    {n=G.UIT.R, config={align = "cm"}, nodes={{n=G.UIT.C, config={align = "cm"}, nodes=label_rows(localize('ph_blind_score_at_least'), w, L)}}},
+    {n=G.UIT.R, config={align = "cm", minh = 0.6}, nodes={
+      stake_icon(0.45),
+      hgap(0.08),
+      {n=G.UIT.T, config={ref_table = G.GAME.blind, ref_value = 'chip_text', scale = 0.001, colour = G.C.RED, shadow = true, id = 'HUD_blind_count', func = 'blind_chip_UI_scale'}},
+    }},
+    {n=G.UIT.R, config={align = "cm", minh = 0.45, maxw = w, func = 'HUD_blind_reward'}, nodes={
+      {n=G.UIT.T, config={text = localize('ph_blind_reward'), scale = L, colour = light()}},
+      -- A long reward shrinks itself, not the row with "Récompense :" in it.
+      {n=G.UIT.O, config={func = 'portrait_fit_text', fit_w = math.max(1.6, w - text_w(localize('ph_blind_reward'), L) - 0.1), object = DynaText({string = {{ref_table = G.GAME.current_round, ref_value = 'dollars_to_be_earned'}}, colours = {G.C.MONEY}, shadow = true, rotate = true, bump = true, silent = true, scale = 0.5}), id = 'dollars_to_be_earned'}},
+    }},
+  }}
+end
+
+local function blind_name(maxw, scale)
+  return {n=G.UIT.O, config={func = 'portrait_fit_text', fit_w = maxw, object = DynaText({string = {{ref_table = G.GAME.blind, ref_value = 'loc_name'}}, colours = {light()}, shadow = true, rotate = true, silent = true, float = true, scale = scale, y_offset = -4, maxw = maxw}), id = 'HUD_blind_name'}}
+end
+
+local function run_info_button(w, h)
+  return {n=G.UIT.R, config={id = 'run_info_container', align = "cm"}, nodes={
+    {n=G.UIT.C, config={id = 'run_info_button', align = "cm", minw = w, maxw = w, minh = h, padding = 0.04, r = 0.1, hover = true, colour = G.C.GREY, button = "run_info", shadow = true}, nodes={
+      {n=G.UIT.C, config={align = "cm", focus_args = {button = G.F_GUIDE and 'guide' or 'back', orientation = 'bm'}, func = 'set_button_pip'}, nodes=
+        label_rows(localize('b_run_info_1')..' '..localize('b_run_info_2'), w - 0.2, L)}
+    }}
+  }}
+end
+
+local function options_button(w, h)
+  return {n=G.UIT.R, config={id = 'options_container', align = "cm"}, nodes={
+    {n=G.UIT.C, config={align = "cm", minw = w, maxw = w, minh = h, padding = 0.04, r = 0.1, hover = true, colour = G.C.GREY, button = "options", shadow = true}, nodes={
+      {n=G.UIT.C, config={align = "cm", focus_args = {button = 'start', orientation = 'bm'}, func = 'set_button_pip'}, nodes=
+        label_rows(localize('b_options'), w - 0.2, L)}
+    }}
+  }}
+end
+
+--The HUD's outer panel: exactly W wide, so its edges are the frame's.
+local function hud_panel(W, nodes)
+  return {n=G.UIT.ROOT, config={align = "cm", padding = 0, colour = G.C.CLEAR}, nodes={
+    {n=G.UIT.R, config={align = "cm", minw = W, padding = 0.1, r = 0.14, colour = G.C.DYN_UI.BOSS_DARK, emboss = 0.05}, nodes=nodes},
+  }}
+end
+
+-- ===========================================================================
+-- One-Thumb
+-- ===========================================================================
+
+local THUMB_HUD_H = 2.95 -- room for a boss's two debuff lines
+
+function create_UIBox_HUD_thumb()
+  local _, W = portrait_frame()
+  local inner = W - 0.2
+  local blind_w = math.floor(inner * 0.55 * 100) / 100
+  local right_w = inner - blind_w - 0.1
+  -- The stats get a full-width row of their own, so labels as long as
+  -- "Mise initiale" or "Apuesta inicial" have room. Money is the widest
+  -- tile: it is the number that grows longest.
+  local row_w = inner - 3 * 0.08
+  local tw = math.floor(row_w * 0.22 * 100) / 100
+  local info_w = math.floor(row_w * 0.24 * 100) / 100
+  local money_w = row_w - 2 * tw - info_w
+  local stats_h = tiles_h({{localize('k_ante'), tw}, {localize('k_round'), tw}})
+
+  portrait_build_dock()
+
+  return hud_panel(W, {
+    {n=G.UIT.R, config={align = "cm"}, nodes={
+      {n=G.UIT.C, config={align = "cm", id = 'row_blind', minw = blind_w, minh = THUMB_HUD_H + portrait_badge_room()}, nodes={
+        {n=G.UIT.B, config={w = 0, h = THUMB_HUD_H + portrait_badge_room(), id = 'row_blind_bottom'}, nodes={}}
+      }},
+      hgap(0.1),
+      {n=G.UIT.C, config={align = "cm", minw = right_w, minh = THUMB_HUD_H + portrait_badge_room(), r = 0.1, colour = G.C.DYN_UI.BOSS_MAIN}, nodes={
+        {n=G.UIT.R, config={align = "cm"}, nodes={{n=G.UIT.C, config={align = "cm"}, nodes=label_rows(localize('k_round')..' '..localize('k_lower_score'), right_w - 0.2, L)}}},
+        {n=G.UIT.R, config={id = 'row_dollars_chips', align = "cm", minh = 0.9}, nodes={
+          stake_icon(0.55),
+          hgap(0.08),
+          {n=G.UIT.T, config={ref_table = G.GAME, ref_value = 'chips_text', lang = G.LANGUAGES['en-us'], scale = 1.15, colour = light(), id = 'chip_UI_count', func = 'portrait_chip_UI_set', scale_mult = 1.45, fit_w = right_w - 0.9, shadow = true}},
+        }},
+      }},
+    }},
+    vgap(0.08),
+    {n=G.UIT.R, config={align = "cm"}, nodes={
+      tile('hud_ante', localize('k_ante'), ante_nodes(), tw, stats_h), hgap(0.08),
+      tile('hud_round', localize('k_round'), {count_text(G.GAME, 'round', G.C.IMPORTANT, V, 'round_UI_count')}, tw, stats_h, 'row_round_text'), hgap(0.08),
+      tile(nil, nil, {money_text(V, money_w - 0.25)}, money_w, stats_h), hgap(0.08),
+      {n=G.UIT.C, config={align = "cm"}, nodes={run_info_button(info_w, stats_h)}},
+    }},
+  })
+end
+
+function create_UIBox_HUD_blind_thumb()
+  local _, W = portrait_frame()
+  local w = math.floor((W - 0.2) * 0.55 * 100) / 100
+  G.GAME.blind:change_dim(1.3, 1.3)
+  return {n=G.UIT.ROOT, config={align = "cm", minw = w, minh = THUMB_HUD_H, r = 0.1, colour = G.C.CLEAR, padding = 0, func = 'HUD_blind_visible', id = 'HUD_blind'}, nodes={
+    {n=G.UIT.R, config={align = "cm", minw = w, minh = 0.6, r = 0.1, emboss = 0.05, colour = G.C.DYN_UI.MAIN}, nodes={
+      blind_name(w - 0.3, V),
+    }},
+    vgap(0.08),
+    -- The boss's debuff under the chip and target, the panel's full width
+    -- ("Toutes les cartes perdent leurs bonus" beside the chip was 6 px).
+    {n=G.UIT.R, config={align = "cm", minw = w, minh = THUMB_HUD_H - 0.68, r = 0.1, colour = G.C.DYN_UI.DARK, padding = 0.05}, nodes={
+      {n=G.UIT.C, config={align = "cm"}, nodes={
+        {n=G.UIT.R, config={align = "cm"}, nodes={
+          {n=G.UIT.C, config={align = "cm"}, nodes={{n=G.UIT.O, config={object = G.GAME.blind, draw_layer = 1}}}},
+          hgap(0.08),
+          {n=G.UIT.C, config={align = "cm"}, nodes={blind_target(w - 1.6)}},
+        }},
+        debuff_rows(w - 0.3),
+      }},
+    }},
+    portrait_blind_badge_row(),
+  }}
+end
+
+--Takes the score line down. Anything still bound to the box afterwards
+--would keep moving it and, through it, the hand it hangs off, which crashes
+--once that hand is gone (a new run): portrait_relayout fixed the one way that
+--happened, and this sweep keeps any other from reaching the hand.
+function portrait_remove_dock()
+  local dock = G.HUD_dock
+  if not dock then return end
+  G.HUD_dock = nil
+  dock:remove()
+  for i = #G.MOVEABLES, 1, -1 do
+    local m = G.MOVEABLES[i]
+    if m.role and m.role.major == dock then table.remove(G.MOVEABLES, i) end
+  end
+end
+
+--The score line above the hand. Its own box, so it stays up while the hand
+--is played and scored (the button bar is taken down then).
+function portrait_build_dock()
+  portrait_remove_dock()
+  if not G.hand then return end
+  local _, W = portrait_frame()
+  -- The side tiles grow (to 2.4) for a long label; the hand's name and its
+  -- chips x mult, stacked, take the rest of the width. A short room (a
+  -- tablet) has no height to spare, so there the two rows are compact: no
+  -- taller than the tiles, its pixels large enough for the smaller text.
+  local side = 1.55
+  for _, label in ipairs({localize('k_hud_hands'), localize('k_hud_discards')}) do
+    side = math.max(side, math.min(2.4, text_w(label, L) + 0.3, label_need(label, 2.4)))
+  end
+  local mid = W - 0.2 - 2 * side - 0.16
+  local compact = G.ROOM.T.h < (PORTRAIT_CONFIG.short_room_h or 24)
+  local dock_h = compact and DOCK_COMPACT_H or DOCK_H
+  local meter_w = math.min(2.6, (mid - 0.1 - 0.75) / 2)
+  local tiles = math.max(dock_h - 0.16, tiles_h({{localize('k_hud_hands'), side}, {localize('k_hud_discards'), side}}))
+  G.HUD_dock = UIBox{
+    definition = {n=G.UIT.ROOT, config={align = "cm", padding = 0, colour = G.C.CLEAR, func = 'portrait_dock_visible'}, nodes={
+      {n=G.UIT.R, config={id = 'thumb_dock', align = "cm", minw = W, minh = dock_h, padding = 0.08, r = 0.14, colour = G.C.DYN_UI.BOSS_DARK, emboss = 0.05}, nodes={
+        tile('hud_hands', localize('k_hud_hands'), {count_text(G.GAME.current_round, 'hands_left', G.C.BLUE, V, 'hand_UI_count')}, side, tiles),
+        hgap(0.08),
+        {n=G.UIT.C, config={id = 'hand_text_area', align = "cm", minw = mid, maxw = mid, minh = tiles, r = 0.1, colour = darken(G.C.BLACK, 0.1)}, nodes={
+          hand_row(meter_w, mid - 0.1, true, compact),
+        }},
+        hgap(0.08),
+        tile('hud_discards', localize('k_hud_discards'), {count_text(G.GAME.current_round, 'discards_left', G.C.RED, V, 'discard_UI_count')}, side, tiles),
+      }},
+    }},
+    config = {align = 'tm', offset = {x = 0, y = -DOCK_GAP}, major = G.hand, bond = 'Weak'}
+  }
+  G.HUD_dock.states.collide.can = false
+end
+
+--Shown while there is a hand to play; the shop, blind select and packs use
+--that part of the screen.
+local DOCK_STATES = {'SELECTING_HAND', 'HAND_PLAYED', 'DRAW_TO_HAND', 'NEW_ROUND', 'PLAY_TAROT'}
+G.FUNCS.portrait_dock_visible = function(e)
+  local show = false
+  for _, s in ipairs(DOCK_STATES) do
+    if G.STATE == G.STATES[s] then show = true break end
+  end
+  e.UIBox.states.visible = show
+end
+
+--Elements One-Thumb keeps in its score line (hands, discards, the hand's
+--chips x mult) are still found through G.HUD, where the game looks for them.
+local uibox_get_UIE_by_ID = UIBox.get_UIE_by_ID
+function UIBox:get_UIE_by_ID(id, node)
+  local found = uibox_get_UIE_by_ID(self, id, node)
+  if found == nil and node == nil and self == G.HUD and G.HUD_dock and not G.HUD_dock.REMOVED then
+    found = uibox_get_UIE_by_ID(G.HUD_dock, id)
+  end
+  return found
+end
+
+-- ===========================================================================
+-- Focus
+-- ===========================================================================
+
+local FOCUS_BLIND_H = 2.3 -- room for a boss's two debuff lines under the blind
+
+--Run Info and Options beside the blind: 2.3 wide, up to 2.9 for a label that
+--needs it ("Параметры"); the blind panel gives the width.
+local function focus_side_w()
+  local need = math.max(label_need(localize('b_options'), 2.9), label_need(localize('b_run_info_1')..' '..localize('b_run_info_2'), 2.9))
+  return math.max(2.3, math.min(2.9, need))
+end
+local function focus_blind_w(W) return W - 0.2 - focus_side_w() - 0.1 end
+
+function create_UIBox_HUD_focus()
+  local _, W = portrait_frame()
+  local inner = W - 0.2
+  -- Four counter tiles and money, which gets the rest; a tile whose label
+  -- needs more ("Weggooimog-/elijkheden") takes it from money.
+  local tw = (inner - 4 * 0.08) / 5.4
+  local labels = {localize('k_hud_hands'), localize('k_hud_discards'), localize('k_ante'), localize('k_round')}
+  local ws = {}
+  for k, label in ipairs(labels) do ws[k] = math.max(tw, math.min(tw * 1.25, label_need(label, tw))) end
+  local money_w = inner - 4 * 0.08 - ws[1] - ws[2] - ws[3] - ws[4]
+  local stats_h = tiles_h({{labels[1], ws[1]}, {labels[2], ws[2]}, {labels[3], ws[3]}, {labels[4], ws[4]}})
+  portrait_remove_dock()
+
+  return hud_panel(W, {
+    {n=G.UIT.R, config={align = "cm"}, nodes={
+      {n=G.UIT.C, config={align = "cm", id = 'row_blind', minw = focus_blind_w(W), minh = FOCUS_BLIND_H + portrait_badge_room()}, nodes={
+        {n=G.UIT.B, config={w = 0, h = FOCUS_BLIND_H + portrait_badge_room(), id = 'row_blind_bottom'}, nodes={}}
+      }},
+      hgap(0.1),
+      {n=G.UIT.C, config={align = "cm", minh = FOCUS_BLIND_H + portrait_badge_room()}, nodes={
+        run_info_button(focus_side_w(), (FOCUS_BLIND_H - 0.1) / 2),
+        vgap(0.1),
+        options_button(focus_side_w(), (FOCUS_BLIND_H - 0.1) / 2),
+      }},
+    }},
+    vgap(0.1),
+    {n=G.UIT.R, config={align = "cm", minw = inner, padding = 0.06, r = 0.1, colour = G.C.DYN_UI.BOSS_MAIN}, nodes={
+      {n=G.UIT.R, config={align = "cm", minw = inner - 0.12}, nodes={round_score(inner - 0.12)}},
+      {n=G.UIT.R, config={align = "cl", minw = inner - 0.12, minh = 0.2, r = 0.1, colour = {0, 0, 0, 0.35}}, nodes={
+        {n=G.UIT.C, config={id = 'portrait_progress', align = "cm", minw = 0.001, minh = 0.2, r = 0.1, colour = G.C.BLUE, func = 'portrait_progress', bar_w = inner - 0.12}, nodes={}},
+      }},
+    }},
+    vgap(0.1),
+    {n=G.UIT.R, config={id = 'hand_text_area', align = "cm", minw = inner, padding = 0.06, r = 0.1, colour = darken(G.C.BLACK, 0.1)}, nodes={
+      hand_row(2.3, inner - 2 * 2.3 - 0.7),
+    }},
+    vgap(0.1),
+    {n=G.UIT.R, config={align = "cm"}, nodes={
+      tile('hud_hands', labels[1], {count_text(G.GAME.current_round, 'hands_left', G.C.BLUE, V, 'hand_UI_count')}, ws[1], stats_h), hgap(0.08),
+      tile('hud_discards', labels[2], {count_text(G.GAME.current_round, 'discards_left', G.C.RED, V, 'discard_UI_count')}, ws[2], stats_h), hgap(0.08),
+      tile(nil, nil, {money_text(V, money_w - 0.2)}, money_w, stats_h), hgap(0.08),
+      tile('hud_ante', labels[3], ante_nodes(), ws[3], stats_h), hgap(0.08),
+      tile('hud_round', labels[4], {count_text(G.GAME, 'round', G.C.IMPORTANT, V, 'round_UI_count')}, ws[4], stats_h, 'row_round_text'),
+    }},
+  })
+end
+
+function create_UIBox_HUD_blind_focus()
+  local _, W = portrait_frame()
+  local w = focus_blind_w(W)
+  -- Wider for a long "Récompense :", so it and the reward both keep their size.
+  local target_w = math.max(3.4, math.min(4.2, text_w(localize('ph_blind_reward'), L) + 1.8))
+  G.GAME.blind:change_dim(1.2, 1.2)
+  return {n=G.UIT.ROOT, config={align = "cm", minw = w, minh = FOCUS_BLIND_H, r = 0.1, colour = G.C.DYN_UI.DARK, padding = 0.05, func = 'HUD_blind_visible', id = 'HUD_blind'}, nodes={
+    {n=G.UIT.R, config={align = "cm", minw = w - 0.1}, nodes={
+      {n=G.UIT.C, config={align = "cm"}, nodes={{n=G.UIT.O, config={object = G.GAME.blind, draw_layer = 1}}}},
+      hgap(0.1),
+      {n=G.UIT.C, config={align = "cm", minw = w - 1.3 - target_w - 0.2}, nodes={
+        {n=G.UIT.R, config={align = "cm", minh = 0.6}, nodes={blind_name(w - 1.3 - target_w - 0.3, V)}},
+      }},
+      hgap(0.1),
+      blind_target(target_w),
+    }},
+    -- A boss's debuff gets the panel's full width ("Toutes les cartes
+    -- perdent leurs bonus" was squeezed beside the name).
+    debuff_rows(w - 0.3),
+    portrait_blind_badge_row(),
+  }}
+end
+
+--The bar under Focus's round score fills towards the blind's target.
+G.FUNCS.portrait_progress = function(e)
+  local target = G.GAME.blind and G.GAME.blind.chips
+  local chips = G.GAME.chips
+  local frac = 0
+  if type(target) == 'number' and target > 0 and type(chips) == 'number' then
+    frac = math.max(0, math.min(1, chips / target))
+  end
+  local w = math.max(0.001, frac * (e.config.bar_w or 1))
+  if math.abs((e.config.minw or 0) - w) > 0.02 then
+    e.config.minw = w
+    portrait_relayout(e)
+  end
+  e.config.colour = frac >= 1 and G.C.GOLD or G.C.BLUE
+end
+
+-- ===========================================================================
+-- Button bars
+-- ===========================================================================
+
+--Steamodded's "Limit: 7" under Play / Discard when a mod changes how many
+--cards they take. Its own patch looks for the vanilla button rows, which the
+--portrait bars do not have, so every bar adds the row itself. nil without it.
+function portrait_hand_limit_row(which, scale)
+  if not (SMODS and SMODS.hand_limit_strings) then return nil end
+  return {n=G.UIT.R, config={align = "cm", padding = 0}, nodes={
+    {n=G.UIT.T, config={ref_table = SMODS.hand_limit_strings, ref_value = which, scale = scale, colour = G.C.UI.TEXT_LIGHT, shadow = true}}
+  }}
+end
+
+local function action(id, button, func, colour, w, h, label, label_scale, pip, limit)
+  return {n=G.UIT.C, config={id = id, align = "cm", minw = w, maxw = w, minh = h, padding = 0.08, r = 0.14, hover = true, colour = colour, button = button, one_press = true, shadow = true, func = func}, nodes={
+    {n=G.UIT.R, config={align = "cm", maxw = w - 0.3}, nodes={
+      {n=G.UIT.T, config={text = label, scale = label_scale, colour = light(), shadow = true, focus_args = {button = pip, orientation = 'bm'}, func = 'set_button_pip'}}
+    }},
+    portrait_hand_limit_row(limit, L),
+  }}
+end
+
+local function pill(id, label, button, w, colour)
+  return {n=G.UIT.C, config={id = id, align = "cm", minh = 0.72, minw = w, maxw = w, padding = 0.06, r = 0.14, hover = true, colour = colour, button = button, shadow = true}, nodes={
+    {n=G.UIT.T, config={text = label, scale = L, maxw = w - 0.2, colour = light(), shadow = true}}
+  }}
+end
+
+--Swipe Only's cue: with cards selected, the directions fade in on either side
+--of the hand's "8/8", where Play and Discard were and in their colours. They
+--are not buttons, and are gone as soon as nothing is selected.
+local swipe_arrow
+local function arrow_node(size, up, colour)
+  if not swipe_arrow then
+    swipe_arrow = Moveable:extend()
+    function swipe_arrow:init(s, is_up, c)
+      Moveable.init(self, 0, 0, s, s)
+      self.up, self.colour = is_up, c
+      self.states.collide.can = false
+    end
+    function swipe_arrow:draw()
+      local w, h = self.VT.w, self.VT.h
+      prep_draw(self, 1)
+      love.graphics.setColor(self.colour)
+      if self.up then
+        love.graphics.polygon('fill', 0, h, w / 2, 0, w, h)
+      else
+        love.graphics.polygon('fill', 0, 0, w / 2, h, w, 0)
+      end
+      love.graphics.pop()
+    end
+  end
+  return {n=G.UIT.O, config={object = swipe_arrow(size, up, colour), can_collide = false}}
+end
+
+G.FUNCS.portrait_swipe_hint = function(e)
+  local selected = (G.STATE == G.STATES.SELECTING_HAND and G.hand and #G.hand.highlighted) or 0
+  local can
+  if e.config.hint == 'play' then
+    can = selected <= (G.hand and G.hand.config.highlighted_limit or 5) and not (G.GAME.blind and G.GAME.blind.block_play)
+  else
+    can = G.GAME.current_round.discards_left > 0
+  end
+  local target = selected > 0 and (can and 1 or 0.35) or 0
+  local alpha = e.config.hint_alpha + (target - e.config.hint_alpha) * math.min(1, 12 * (G.real_dt or 0.016))
+  e.config.hint_alpha = alpha
+  e.config.colour[4] = 0.75 * alpha
+  e.config.hint_colour[4] = alpha
+end
+
+--The cue's row: order as the bar's Play and Discard had it, empty in the middle
+--for the card counter.
+function portrait_swipe_hint_row(w, play_right)
+  local function hint(kind, label, up, colour)
+    local c = {colour[1], colour[2], colour[3], 0}
+    return {n=G.UIT.C, config={align = "cm", padding = 0.07, r = 0.1, colour = {0, 0, 0, 0}, func = 'portrait_swipe_hint', hint = kind, hint_alpha = 0, hint_colour = c}, nodes={
+      arrow_node(0.2, up, c),
+      hgap(0.1),
+      {n=G.UIT.T, config={text = label, scale = L, colour = c}},
+    }}
+  end
+  local play = hint('play', localize('b_play_hand'), true, G.C.BLUE)
+  local discard = hint('discard', localize('b_discard'), false, G.C.RED)
+  local room = w - text_w(localize('b_play_hand'), L) - text_w(localize('b_discard'), L) - 1.1
+  local middle = {n=G.UIT.C, config={minw = math.max(1.2, room)}, nodes={}}
+  return {n=G.UIT.R, config={align = "cm", minw = w, minh = 0.46}, nodes=play_right and {discard, middle, play} or {play, middle, discard}}
+end
+
+--Swipe Only drops Play and Discard (swipe up plays, down discards) and keeps
+--what each bar has besides them, in one thin row under the cue: One-Thumb's
+--Options, Rank and Suit, Focus's sort toggle. The hand takes the room: its
+--cards grow (hand_card_scale), it sits lower (swipe_hand_base_offset), and
+--the shelves and stage share out the rest.
+function create_UIBox_buttons_layout(layout, swipe)
+  local _, W = portrait_frame()
+  local inner = W - 0.1
+  if layout == 'one_thumb' then
+    local h = 1.7
+    local play_w = math.floor((inner - 0.1) * 0.6 * 100) / 100
+    local discard_w = inner - 0.1 - play_w
+    local play = action('play_button', 'play_cards_from_highlighted', 'can_play', G.C.BLUE, play_w, h, localize('b_play_hand'), 0.7, 'x', 'play')
+    local discard = action('discard_button', 'discard_cards_from_highlighted', 'can_discard', G.C.RED, discard_w, h, localize('b_discard'), 0.6, 'y', 'discard')
+    -- Play sits under the thumb: the outer edge on the hand it is held in.
+    local right_handed = (G.SETTINGS.play_main_hand or 2) == 2
+    local pw = (inner - 0.2) / 3
+    local menu = pill('thumb_menu_button', localize('b_options'), 'options', pw, G.C.GREY)
+    menu.config.focus_args = {button = 'start', orientation = 'bm'}
+    local small_row = {n=G.UIT.R, config={align = "cm"}, nodes={
+      menu, hgap(0.1),
+      pill(nil, localize('k_rank'), 'sort_hand_value', pw, G.C.ORANGE), hgap(0.1),
+      pill(nil, localize('k_suit'), 'sort_hand_suit', pw, G.C.ORANGE),
+    }}
+    local rows = swipe and {portrait_swipe_hint_row(inner, right_handed), small_row} or {
+      {n=G.UIT.R, config={align = "cm"}, nodes=right_handed and {discard, hgap(0.1), play} or {play, hgap(0.1), discard}},
+      vgap(0.1),
+      small_row,
+    }
+    return {n=G.UIT.ROOT, config={align = "cm", padding = 0, colour = G.C.CLEAR}, nodes={
+      {n=G.UIT.R, config={align = "cm", minw = W, padding = 0.05}, nodes=rows},
+    }}
+  end
+
+  -- Focus: Discard | sort toggle | Play, one row, one height.
+  PORTRAIT_SORT_STATE.label = PORTRAIT_SORT_STATE.next == 'suit' and localize('k_suit') or localize('k_rank')
+  if swipe then
+    return {n=G.UIT.ROOT, config={align = "cm", padding = 0, colour = G.C.CLEAR}, nodes={
+      portrait_swipe_hint_row(inner, G.SETTINGS.play_button_pos == 1),
+      {n=G.UIT.R, config={align = "cm", minw = W, padding = 0.05}, nodes={
+        {n=G.UIT.C, config={id = 'focus_sort_button', align = "cm", minw = inner, maxw = inner, minh = 0.72, padding = 0.06, r = 0.14, hover = true, colour = G.C.DYN_UI.BOSS_DARK, button = 'portrait_sort_toggle', shadow = true}, nodes={
+          text(localize('b_sort_hand'), L),
+          hgap(0.2),
+          {n=G.UIT.T, config={ref_table = PORTRAIT_SORT_STATE, ref_value = 'label', scale = V, colour = G.C.ORANGE, shadow = true}},
+        }},
+      }},
+    }}
+  end
+  local h = 1.55
+  -- Wider for a long label ("Сортировать"), up to 3.2; Play and Discard give it.
+  local sort_w = math.max(2.5, math.min(3.2, label_need(localize('b_sort_hand'), 3.2)))
+  local side_w = (inner - sort_w - 0.2) / 2
+  local play = action('play_button', 'play_cards_from_highlighted', 'can_play', G.C.BLUE, side_w, h, localize('b_play_hand'), 0.65, 'x', 'play')
+  local discard = action('discard_button', 'discard_cards_from_highlighted', 'can_discard', G.C.RED, side_w, h, localize('b_discard'), 0.65, 'y', 'discard')
+  local sort = {n=G.UIT.C, config={id = 'focus_sort_button', align = "cm", minw = sort_w, maxw = sort_w, minh = h, padding = 0.06, r = 0.14, hover = true, colour = G.C.DYN_UI.BOSS_DARK, button = 'portrait_sort_toggle', shadow = true}, nodes={
+    {n=G.UIT.R, config={align = "cm"}, nodes={{n=G.UIT.C, config={align = "cm"}, nodes=label_rows(localize('b_sort_hand'), sort_w - 0.2, L)}}},
+    {n=G.UIT.R, config={align = "cm", maxw = sort_w - 0.15}, nodes={
+      {n=G.UIT.T, config={ref_table = PORTRAIT_SORT_STATE, ref_value = 'label', scale = V, colour = G.C.ORANGE, shadow = true}}
+    }},
+  }}
+  -- Same order rule as the classic bar (Play/Discard Button Position).
+  local row = G.SETTINGS.play_button_pos == 1 and {discard, hgap(0.1), sort, hgap(0.1), play} or {play, hgap(0.1), sort, hgap(0.1), discard}
+  return {n=G.UIT.ROOT, config={align = "cm", padding = 0, colour = G.C.CLEAR}, nodes={
+    {n=G.UIT.R, config={align = "cm", minw = W, padding = 0.05}, nodes=row},
+  }}
+end
+
+-- ===========================================================================
+-- Placing the card areas
+-- ===========================================================================
+
+local AREA_LABEL_H = 0.4 -- the "0/5" counters under the shelves
+
+--Moveable:align_to_major works out a box's offset from its major once, when
+--the alignment changes, not when the major is resized. After the areas
+--change width, everything hung off them (button bar, score line, hand
+--preview, shop, tags) is made to work it out again.
+local function realign_area_boxes()
+  local areas = {[G.hand] = true, [G.jokers] = true, [G.play] = true, [G.deck] = true, [G.consumeables] = true}
+  for _, m in pairs(G.MOVEABLES) do
+    if m.role and m.role.major and areas[m.role.major] and m.alignment then m.alignment.prev_type = nil end
+  end
+  -- A box centres on its area by where its contents are, and those stay where it
+  -- last laid them out: each change of layout or hand took the deck's count and
+  -- the card slots further off, until they left the screen. An area draws a new
+  -- box when it has none.
+  for area in pairs(areas) do
+    local box = area.children and area.children.area_uibox
+    local made_at = box and box.portrait_made_at
+    if made_at and (math.abs(made_at.x - area.T.x) > 0.01 or math.abs(made_at.y - area.T.y) > 0.01
+        or math.abs(made_at.w - area.T.w) > 0.01) then
+      box:remove()
+      area.children.area_uibox = nil
+    end
+  end
+end
+
+portrait_realign_area_boxes = realign_area_boxes
+
+--Swipe Only's bigger cards need a taller hand area: the counter, the bar and
+--the score line hang off its edges. Runs from CardArea:move, so a new run or a
+--live toggle is picked up.
+function portrait_set_hand_height()
+  local hand = G.hand
+  hand.portrait_base_h = hand.portrait_base_h or hand.T.h
+  local h = hand.portrait_base_h * portrait_hand_scale()
+  if math.abs(hand.T.h - h) > 0.001 then
+    hand.T.h = h
+    realign_area_boxes()
+  end
+end
+
+--Card areas in the frame: consumables and deck on one shelf, jokers on the
+--next, the stage for played cards, then the hand with what hangs off it. The
+--spare height is shared evenly between the gaps. Returns false for Classic,
+--which keeps its own placement in set_screen_positions.
+function portrait_place_areas()
+  local pc = PORTRAIT_CONFIG
+  local layout = portrait_layout()
+  local lc = pc.layouts and pc.layouts[layout]
+  for _, area in ipairs({G.jokers, G.hand, G.play}) do
+    area.portrait_base_w = area.portrait_base_w or area.T.w
+  end
+  if not lc then
+    for _, area in ipairs({G.jokers, G.hand, G.play}) do area.T.w = area.portrait_base_w end
+    realign_area_boxes()
+    return false
+  end
+
+  local x0, W = portrait_frame()
+  local room_h = G.ROOM.T.h
+  G.jokers.T.w = W
+  G.hand.T.w = W
+  G.play.T.w = math.min(G.play.portrait_base_w, W)
+
+  G.hand.T.x = x0
+  G.hand.T.y = room_h - G.hand.T.h - pc.bottom_margin - get_hand_base_offset()
+
+  -- Above the hand: a selected card's lift, and One-Thumb's score line.
+  local above_hand = DOCK_GAP
+  if layout == 'one_thumb' then
+    above_hand = DOCK_GAP + ((G.HUD_dock and not G.HUD_dock.REMOVED and G.HUD_dock.T.h) or DOCK_H)
+  end
+  local stage_bottom = G.hand.T.y - above_hand - 0.15
+  local hud_bottom = (G.HUD and not G.HUD.REMOVED and G.HUD.T) and (G.HUD.T.y + G.HUD.T.h) or 4
+  local shelf_h = G.consumeables.T.h + AREA_LABEL_H
+  local jokers_h = G.jokers.T.h + AREA_LABEL_H
+  -- Even gaps, up to a point: past it the shelves stay with the HUD and the
+  -- stage takes the middle of what is left, so the screen reads as two
+  -- groups (what you have, what you play) rather than loose rows.
+  local spare = stage_bottom - hud_bottom - shelf_h - jokers_h - G.play.T.h
+  local gap = math.max(0.1, math.min(0.75, spare / 4))
+  local stage_gap = math.max(gap, (spare - 2 * gap) / 2)
+
+  local y = hud_bottom + gap
+  local right_handed = (G.SETTINGS.play_main_hand or 2) == 2
+  if right_handed then
+    G.consumeables.T.x = x0 + W - G.consumeables.T.w
+    G.deck.T.x = x0
+  else
+    G.consumeables.T.x = x0
+    G.deck.T.x = x0 + W - G.deck.T.w
+  end
+  G.consumeables.T.y = y
+  G.deck.T.y = y
+
+  y = y + shelf_h + gap
+  G.jokers.T.x = x0
+  G.jokers.T.y = y
+
+  y = y + jokers_h + stage_gap
+  G.play.T.x = x0 + (W - G.play.T.w) / 2
+  G.play.T.y = math.min(y, stage_bottom - G.play.T.h)
+
+  G.discard.T.x = G.play.T.x + G.play.T.w + pc.discard_x_offset
+  G.discard.T.y = G.play.T.y
+  realign_area_boxes()
+  portrait_arrange_tags()
+  return true
+end
+
+-- ===========================================================================
+-- Switching styles in a run
+-- ===========================================================================
+
+--Rebuilds the HUD, blind panel, score line and hand preview in the current
+--style, the way start_run builds them, so a style picked mid-run shows at
+--once. Boxes anchored to the old HUD (blind prompt, shop sign) are moved to
+--the new one.
+function portrait_rebuild_HUD()
+  if not (G.F_PORTRAIT and G.STAGE == G.STAGES.RUN and G.HUD and G.HUD_blind and G.GAME and G.GAME.blind) then return end
+
+  --The blind sprite lives in the panel; removing the panel would remove it.
+  local function detach(node)
+    if node.config and node.config.object == G.GAME.blind then node.config.object = nil end
+    for _, child in pairs(node.children or {}) do detach(child) end
+  end
+  detach(G.HUD_blind.UIRoot)
+
+  local old_major = G.HUD_blind.role and G.HUD_blind.role.major
+  local major_id = (old_major and old_major.config and old_major.config.id) or 'row_blind'
+  local blind_offset_y = G.HUD_blind.alignment and G.HUD_blind.alignment.offset and G.HUD_blind.alignment.offset.y or 0
+
+  G.HUD:remove()
+  G.HUD_blind:remove()
+  portrait_remove_dock()
+
+  G.HUD = UIBox{
+    definition = create_UIBox_HUD_vertical(),
+    config = {align = 'tm', offset = {x = 0, y = 0}, major = G.ROOM}
+  }
+  G.HUD.T.y = 0.2
+  G.HUD.T.x = (G.ROOM.T.w - G.HUD.T.w) / 2
+
+  local row_blind = G.HUD:get_UIE_by_ID('row_blind')
+  G.HUD_blind = UIBox{
+    definition = create_UIBox_HUD_blind(),
+    config = {major = G.HUD:get_UIE_by_ID(major_id) or row_blind, align = 'cm', offset = {x = 0, y = blind_offset_y}, bond = 'Weak'}
+  }
+  for _, id in ipairs({'HUD_blind_debuff_1', 'HUD_blind_debuff_2'}) do
+    local node = G.HUD_blind:get_UIE_by_ID(id)
+    if node then node.config.func = 'portrait_HUD_blind_debuff' end
+  end
+
+  G.hand_text_area = {
+    chips = G.HUD:get_UIE_by_ID('hand_chips'),
+    mult = G.HUD:get_UIE_by_ID('hand_mult'),
+    ante = G.HUD:get_UIE_by_ID('ante_UI_count'),
+    round = G.HUD:get_UIE_by_ID('round_UI_count'),
+    chip_total = G.HUD:get_UIE_by_ID('hand_chip_total'),
+    handname = G.HUD:get_UIE_by_ID('hand_name'),
+    hand_level = G.HUD:get_UIE_by_ID('hand_level'),
+    game_chips = G.HUD:get_UIE_by_ID('chip_UI_count'),
+    blind_chips = G.HUD_blind:get_UIE_by_ID('HUD_blind_count'),
+    blind_spacer = G.HUD:get_UIE_by_ID('blind_spacer'),
+  }
+  G.FUNCS.blind_chip_UI_scale(G.hand_text_area.blind_chips)
+  G.HUD:recalculate()
+  G.HUD_blind:recalculate()
+
+  if G.hand_preview then
+    G.hand_preview:remove()
+    G.hand_preview = UIBox{
+      definition = create_UIBox_hand_preview(),
+      config = {align = 'tm', offset = {x = 0, y = PORTRAIT_CONFIG.hand_preview.y_offset or -0.65}, major = G.hand, bond = 'Weak'}
+    }
+    G.hand_preview.states.collide.can = false
+    G.hand_preview.states.visible = false
+  end
+
+  --Boxes draw in the order they were made, so these go back on top of the
+  --new HUD as well.
+  for _, box in ipairs({G.blind_prompt_box, G.SHOP_SIGN}) do
+    if box and not box.REMOVED and row_blind then
+      box:set_alignment({major = row_blind})
+      for k, v in ipairs(G.I.UIBOX) do
+        if v == box then table.remove(G.I.UIBOX, k) break end
+      end
+      table.insert(G.I.UIBOX, box)
+    end
+  end
+end
+
+--Where Classic's joker shelf sits: its tuned jokers_y on phones. On a short
+--room (tablets, 16:10) that left the shop no room under the shelf and pushed
+--its bottom row off screen, so there the shelves start under the HUD.
+function portrait_jokers_y()
+  local pc = PORTRAIT_CONFIG
+  local short_room = G.ROOM and G.ROOM.T and G.ROOM.T.h < (pc.short_room_h or 24)
+  if not (short_room and G.HUD and not G.HUD.REMOVED and G.HUD.T and G.jokers) then return pc.jokers_y end
+  local shelf_top = G.HUD.T.y + G.HUD.T.h + 0.45
+  return math.min(pc.jokers_y, shelf_top + G.jokers.T.h + 0.6)
+end
+
+--The round's end, blind select and shop panels hang off the hand. A style
+--whose hand sits higher or lower than Classic's moves them by the
+--difference, so they keep Classic's place at the bottom of the screen.
+function portrait_panel_drop()
+  if not G.F_PORTRAIT then return 0 end
+  local grown = G.hand and G.hand.portrait_base_h and (G.hand.T.h - G.hand.portrait_base_h) or 0
+  return get_hand_base_offset() - PORTRAIT_CONFIG.hand_base_offset + grown
+end
+
+--The bottom of the screen in room units. The room starts G.ROOM.T.y down
+--the screen, so its own height runs past the bottom edge.
+function portrait_screen_bottom()
+  return love.graphics.getHeight() / (G.TILESCALE * G.TILESIZE) - G.ROOM.T.y
+end
+
+--The shop's place under the hand: its top kept under the joker shelf. On a
+--short room (a tablet in Focus) that left its packs off the bottom of the
+--screen, so there the gap under the shelf gives up to 0.3 first.
+function portrait_shop_offset()
+  local floor_y = portrait_shelf_floor()
+  local y = math.max(-5.3 + portrait_panel_drop(), floor_y and (floor_y - G.hand.T.y) or -99)
+  if G.shop and G.shop.T and G.ROOM and floor_y then
+    local fits = portrait_screen_bottom() - 0.05 - G.shop.T.h - G.hand.T.y
+    y = math.min(y, math.max(fits, floor_y - 0.3 - G.hand.T.y))
+  end
+  return y
+end
+
+--Blind select's place: bottom-aligned in the hand, its top kept under the
+--joker shelf so Select stays tappable, and, like the shop, its bottom on the
+--screen (Japanese text, taller, took it 12 px past a tablet's edge).
+function portrait_blind_select_offset()
+  local box = G.blind_select
+  local y = 0.8 - (G.hand.T.y - PORTRAIT_CONFIG.jokers_y) + box.T.h
+  local floor_y = portrait_shelf_floor()
+  if floor_y then
+    y = math.max(y, floor_y - (G.hand.T.y + G.hand.T.h) + box.T.h)
+    local fits = portrait_screen_bottom() - (G.hand.T.y + G.hand.T.h)
+    y = math.min(y, math.max(fits, floor_y - 0.25 - (G.hand.T.y + G.hand.T.h) + box.T.h))
+  end
+  return y
+end
+
+--How tall a blind's column may be. Its background runs down off the bottom of the
+--screen, and at the desktop's 10 it began above Focus's joker count.
+function portrait_blind_choice_minh()
+  local floor_y = portrait_shelf_floor()
+  if not floor_y then return 10 end
+  return math.min(10, portrait_screen_bottom() - 0.3 - floor_y)
+end
+
+--A row of the round's end: as wide as the rest, however long its text, so its
+--dollars stay in line with theirs (a long hands or interest line pushed them out).
+function portrait_line_up_eval_row(name, width)
+  local dollars = G.round_eval:get_UIE_by_ID('dollar_' .. name)
+  local column = dollars and dollars.parent
+  local text = column and column.parent and column.parent.children[1]
+  if not text then return end
+  column.config.minw = math.max(width - text.T.w, 0.5)
+  G.round_eval:recalculate()
+end
+
+--Where the hand comes to rest in the current state.
+function portrait_hand_rest_y()
+  local room_h = (G.ROOM and G.ROOM.T and G.ROOM.T.h) or G.TILE_H or 10
+  local slide_offset = 3*((not G.deck_preview and (G.STATE == G.STATES.SELECTING_HAND or G.STATE == G.STATES.DRAW_TO_HAND)) and 1 or 0)
+  return room_h - G.hand.T.h - get_hand_base_offset() - slide_offset
+end
+
+--After a style switch the hand has moved; put an open shop or blind select
+--back where their builders would have. set_screen_positions leaves the hand
+--short of its rest, and a panel placed from there ended 0.35 too low.
+function portrait_reflow_panels()
+  if not G.F_PORTRAIT or not G.hand then return end
+  G.hand.T.y = portrait_hand_rest_y()
+  if G.shop and not G.shop.REMOVED and G.STATE == G.STATES.SHOP then
+    G.shop.alignment.offset.y = portrait_shop_offset()
+  end
+  if G.blind_select and not G.blind_select.REMOVED and G.STATE == G.STATES.BLIND_SELECT then
+    G.blind_select.alignment.offset.y = portrait_blind_select_offset()
+  end
+end
+
+--Tags stack up from the corner under the joker shelf. Past the room left
+--under the HUD (a short tablet room fits about seven) the rest go down from
+--the first tag instead, so no tag ever sits on the HUD. Re-run whenever a tag
+--comes or goes and when the shelves move.
+function portrait_arrange_tags()
+  if not (G.F_PORTRAIT and G.HUD_tags and G.HUD_tags[1] and G.jokers and G.jokers.T) then return end
+  local align, offset = get_portrait_first_tag_align()
+  local tag_h = G.HUD_tags[1].T.h > 0 and G.HUD_tags[1].T.h or 0.9
+  local first_top = G.jokers.T.y + G.jokers.T.h
+  local limit = (G.HUD and not G.HUD.REMOVED and G.HUD.T) and (G.HUD.T.y + G.HUD.T.h + 0.1) or 0
+  local up = math.max(1, math.floor((first_top + tag_h - limit) / tag_h))
+  for k, box in ipairs(G.HUD_tags) do
+    if k == 1 then
+      box:set_alignment({type = align, offset = {x = offset.x, y = offset.y}, major = G.jokers, xy_bond = 'Weak'})
+    elseif k <= up then
+      box:set_alignment({type = 'tm', offset = {x = 0, y = 0}, major = G.HUD_tags[k - 1], xy_bond = 'Weak'})
+    else
+      box:set_alignment({type = 'bm', offset = {x = 0, y = 0}, major = G.HUD_tags[k == up + 1 and 1 or k - 1], xy_bond = 'Weak'})
+    end
+    box.alignment.prev_type = nil
+  end
+end
+
+--Sets the text of a row to config.text_scale once the box is built, for rows
+--whose label line has to stay exactly as vanilla wrote it (another mod's
+--Lovely patch anchors on that line).
+--The first call can come while the box is still being built, and the rest of
+--the build lays it out again at the old size: the text was drawn at the new
+--size over a button sized for the old one (#11, Game Over's Main Menu, until
+--Jimbo came in and the box was laid out again). So it is laid out once more on
+--the next frame.
+G.FUNCS.portrait_text_scale = function(e)
+  if e.config.text_scaled == true or not G.F_PORTRAIT then return end
+  if not e.config.text_scaled then
+    for _, child in ipairs(e.children) do
+      if child.UIT == G.UIT.T and child.config then child.config.scale = e.config.text_scale end
+    end
+    e.config.text_scaled = 'pending'
+  else
+    e.config.text_scaled = true
+  end
+  portrait_relayout(e)
+end
+
+--A tutorial overlay is a dimming box centred on the room. Vanilla's carries
+--a room-sized row, which makes it cover a portrait screen; a mod's built
+--without one (Cryptid's intro: a 32-tile square) leaves the top of a tall
+--room undimmed. Such a box is grown once to cover the whole screen.
+--In portrait a tutorial stacks under its character: speech bubble, then the
+--step's own panel (Cryptid's gameset pick), then the button. A panel hung
+--off the character, as landscape lays it out, sat on the bubble; it goes
+--under the bubble, and the button under the panel.
+local function stack_tutorial(ot)
+  local J = ot.Jimbo
+  local sb = J and J.children and J.children.speech_bubble
+  local content = ot.content
+  if not (sb and content and not content.REMOVED) then return end
+  if content.portrait_stacked ~= sb then
+    content.portrait_stacked = sb
+    content:set_alignment({major = sb, type = 'bm', offset = {x = 0, y = 0.15}})
+    content.alignment.prev_type = nil
+  end
+  local button = J.children.button
+  if button and not button.REMOVED and button.portrait_stacked ~= content then
+    button.portrait_stacked = content
+    button:set_alignment({major = content, type = 'bm', offset = {x = 0, y = 0.2}})
+    button.alignment.prev_type = nil
+  end
+end
+
+--A mod may put its own panel where the bubble now goes (Cryptid's gameset
+--pick sits just under the screen's middle). Once the bubble is up, the
+--character is lifted by whatever its bubble and button would cover of such a
+--panel, once per bubble.
+local function lift_tutorial(ot)
+  local J = ot.Jimbo
+  local sb = J and J.children and J.children.speech_bubble
+  if not (sb and sb.states.visible and J.alignment and J.alignment.offset) or J.portrait_lifted_for == sb then return end
+  J.portrait_lifted_for = sb
+  local top = sb.T.y
+  local bottom = sb.T.y + sb.T.h
+  local button = J.children.button
+  if button and not button.REMOVED and not ot.content then bottom = button.T.y + button.T.h end
+  local own = {[sb] = true, [ot] = true}
+  if ot.content then own[ot.content] = true end
+  if button then own[button] = true end
+  -- Buttons of another box drawn where the bubble and its button now go.
+  local lift = 0
+  local function walk(node)
+    if node.states and node.states.visible == false then return end
+    local c = node.config
+    if c and c.button and node.T and node.T.w > 0
+       and node.T.y < bottom + 0.15 and node.T.y + node.T.h > top
+       and node.T.x < sb.T.x + sb.T.w and node.T.x + node.T.w > sb.T.x then
+      lift = math.max(lift, bottom + 0.4 - node.T.y)
+    end
+    for _, child in pairs(node.children or {}) do
+      if type(child) == 'table' and child.T and not child.UIRoot then walk(child) end
+    end
+  end
+  for _, box in ipairs(G.I.UIBOX) do
+    if not own[box] and not box.REMOVED and box.states.visible and box.UIRoot then walk(box.UIRoot) end
+  end
+  if lift > 0 then
+    J:set_alignment({offset = {x = J.alignment.offset.x or 0, y = (J.alignment.offset.y or 0) - lift}})
+  end
+end
+
+local portrait_game_update = Game.update
+function Game:update(dt)
+  portrait_game_update(self, dt)
+  local ot = G.OVERLAY_TUTORIAL
+  if G.F_PORTRAIT and ot and not ot.REMOVED then
+    stack_tutorial(ot)
+    lift_tutorial(ot)
+  end
+  if G.F_PORTRAIT and ot and not ot.REMOVED and not ot.portrait_covered and ot.UIRoot and G.ROOM and G.ROOM.T then
+    ot.portrait_covered = true
+    local need_h = G.ROOM.T.h + 2 * (math.abs(ot.alignment and ot.alignment.offset and ot.alignment.offset.y or 0) + 2)
+    if ot.T.h < need_h then
+      ot.UIRoot.config.minh = need_h
+      ot.UIRoot.config.minw = math.max(ot.T.w, G.ROOM.T.w + 4)
+      ot:recalculate()
+    end
+  end
+end
+
+--Steamodded's badge is made 4.4 tiles wide and, to make room for it, eases the
+--HUD down: right for the desktop HUD, but a portrait blind panel is narrower
+--and the portrait HUD is placed by hand. The badge is held to its panel's
+--width and slimmer, and the HUD stays where it is.
+local function wrap_smods_badge()
+  if not G.FUNCS.HUD_blind_badge or G.FUNCS.portrait_badge_wrapped then return end
+  local smods_badge = G.FUNCS.HUD_blind_badge
+  G.FUNCS.portrait_badge_wrapped = true
+  G.FUNCS.HUD_blind_badge = function(e)
+    local had = e.children[1]
+    local panel = G.HUD_blind
+    smods_badge(e)
+    -- Leaving a modded blind, Steamodded builds the blind panel anew; its
+    -- debuff lines get their portrait func, as start_run gives them.
+    if G.HUD_blind ~= panel and G.HUD_blind then
+      for _, id in ipairs({'HUD_blind_debuff_1', 'HUD_blind_debuff_2'}) do
+        local node = G.HUD_blind:get_UIE_by_ID(id)
+        if node then node.config.func = 'portrait_HUD_blind_debuff' end
+      end
+      if G.hand_text_area then G.hand_text_area.blind_chips = G.HUD_blind:get_UIE_by_ID('HUD_blind_count') end
+      return
+    end
+    local badge = e.children[1]
+    if G.F_PORTRAIT and badge and badge ~= had and e.UIBox and e.UIBox.T then
+      local max_w = e.UIBox.T.w - 0.2
+      local function clamp(node)
+        if node.config and node.config.minw and node.config.minw > max_w then node.config.minw = max_w end
+        if node.config then node.config.maxw = math.min(node.config.maxw or max_w, max_w) end
+        for _, child in pairs(node.children or {}) do if type(child) == 'table' and child.config then clamp(child) end end
+      end
+      clamp(badge)
+      e.config.minh = 0.38
+      e.UIBox:recalculate()
+    end
+  end
+end
+portrait_wrap_smods_badge = wrap_smods_badge
+
+local game_ease_value = ease_value
+function ease_value(ref_table, ...)
+  if G.F_PORTRAIT and G.HUD and G.HUD.alignment and ref_table == G.HUD.alignment.offset then return end
+  return game_ease_value(ref_table, ...)
+end

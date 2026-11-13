@@ -1,0 +1,62 @@
+--- a/card_character.lua
++++ b/card_character.lua
+@@ -64,6 +64,14 @@
+ 
+ function Card_Character:add_button(button, func, colour, update_func, snap_to, yoff)
+     if self.children.button then self.children.button:remove() end
++    -- Portrait puts the speech bubble under the character too (see
++    -- add_speech_bubble), so a button at the usual 0.3 landed on the bubble's
++    -- text (Cryptid's intro). It goes under the bubble instead.
++    local sb = self.children.speech_bubble
++    if G.F_PORTRAIT and sb and sb.T and sb.T.h > 0 then
++        local sb_bottom = (self.config.speech_bubble_align and self.config.speech_bubble_align.offset.y or 0.3) + sb.T.h
++        yoff = math.max(yoff or 0.3, sb_bottom + 0.15)
++    end
+     self.config.button_align = {align="bm", offset = {x=0,y=yoff or 0.3},major = self, parent = self}
+     self.children.button = UIBox{
+         definition = create_UIBox_character_button({button = button, func = func, colour = colour, update_func = update_func, maxw = 3}),
+@@ -74,7 +82,13 @@
+ 
+ function Card_Character:add_speech_bubble(text_key, align, loc_vars)
+     if self.children.speech_bubble then self.children.speech_bubble:remove() end
+-    self.config.speech_bubble_align = {align=align or 'bm', offset = {x=0,y=0},parent = self}
++    local sb_align = align or 'bm'
++    local sb_offset_y = 0
++    if G.F_PORTRAIT then
++        sb_align = 'bm'
++        sb_offset_y = 0.3
++    end
++    self.config.speech_bubble_align = {align=sb_align, offset = {x=0,y=sb_offset_y},parent = self}
+     self.children.speech_bubble = 
+     UIBox{
+         definition = G.UIDEF.speech_bubble(text_key, loc_vars),
+@@ -89,6 +103,21 @@
+     self.children.speech_bubble.states.visible = false
+ end
+ 
++-- Under the character is off the screen for one low down (a tablet's Game Over):
++-- there it talks from the side the screen has more of. Asked when it speaks: it
++-- has only then got to its place.
++function Card_Character:portrait_seat_speech_bubble()
++    local sb = self.children.speech_bubble
++    if not (G.F_PORTRAIT and sb and sb.T) then return end
++    local offset = self.config.speech_bubble_align.offset
++    if self.T.y + self.T.h + offset.y + sb.T.h > portrait_screen_bottom() - 0.1 then
++        local left = self.T.x + self.T.w/2 > G.ROOM.T.w/2
++        offset.x, offset.y = left and -0.1 or 0.1, 0
++        sb:set_alignment({major = self, type = left and 'cl' or 'cr', offset = offset})
++        sb:align_to_major()
++    end
++end
++
+ function Card_Character:remove_button()
+     if self.children.button then self.children.button:remove(); self.children.button = nil end
+ end
+@@ -104,6 +133,7 @@
+             trigger = 'after',
+             delay = 0.1,
+             func = function()
++                self:portrait_seat_speech_bubble()
+                 if self.children.speech_bubble then self.children.speech_bubble.states.visible = true end
+                 self:say_stuff(n, true)
+               return true

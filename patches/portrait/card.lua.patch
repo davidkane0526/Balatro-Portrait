@@ -1,0 +1,208 @@
+--- a/card.lua
++++ b/card.lua
+@@ -4266,9 +4266,17 @@
+ 
+ function Card:move(dt)
+     Moveable.move(self, dt)
+-    --self:align()
+     if self.children.h_popup then
+         self.children.h_popup:set_alignment(self:align_h_popup())
++        -- set_alignment hands the box a new role with no offset, and
++        -- align_to_major skips an alignment it has seen the frame before: every
++        -- other frame the description sat on the card itself, was pushed back up
++        -- onto the screen from there, and shook while the card was dragged low
++        -- (#11). It is placed again every frame.
++        if G.F_PORTRAIT then self.children.h_popup.alignment.prev_type = nil end
++        if prepare_portrait_popup_fit then
++            prepare_portrait_popup_fit(self.children.h_popup)
++        end
+     end
+ end
+ 
+@@ -4277,31 +4285,72 @@
+         local popup_direction = (self.children.buy_button or (self.area and self.area.config.view_deck) or (self.area and self.area.config.type == 'shop')) and 'cl' or 
+                                 (self.T.y < G.CARD_H*0.8) and 'bm' or
+                                 'tm'
++        local offset_y_tm = focused_ui and (self.area and self.area == G.hand and -0.08 or -0.15) or -0.13
++        local offset_y_bm = focused_ui and 0.12 or 0.1
++        local offset_x = popup_direction ~= 'cl' and 0 or
++                    focused_ui and -0.05 or
++                    (self.ability.consumeable and 0.0) or
++                    (self.ability.set == 'Voucher' and 0.0) or
++                    -0.05
++
++        if G.F_PORTRAIT then
++            local room_w = G.ROOM and G.ROOM.T and G.ROOM.T.w or 20
++            local room_h = G.ROOM and G.ROOM.T and G.ROOM.T.h or 20
++            local card_cx = self.T.x + self.T.w / 2
++            local card_cy = self.T.y + self.T.h / 2
++            -- Margin large enough for typical popup half-width (~2 tiles) so the tooltip stays inside the screen
++            local edge_margin = 2.5
++
++            -- The popup sits clear of the card by a fixed gap. A thumb resting on
++            -- the card covers a good deal around it, and a tooltip printed right
++            -- against the card edge ends up under the hand that opened it. The gap
++            -- is a constant rather than something measured off the touch point, so
++            -- the tooltip holds its place instead of sliding about while you hold
++            -- (#44). Tune it with PORTRAIT_CONFIG.tooltip_card_gap.
++            local touch_gap = (PORTRAIT_CONFIG and PORTRAIT_CONFIG.tooltip_card_gap) or 0.9
++
++            if card_cy > room_h * 0.55 then
++                popup_direction = 'tm'
++                offset_y_tm = (focused_ui and -0.15 or -0.2) - touch_gap
++            else
++                popup_direction = 'bm'
++                offset_y_bm = (focused_ui and 0.15 or 0.2) + touch_gap
++            end
++
++            -- Push popup back into screen when card is near edges (room_w/2 is screen center)
++            if card_cx < edge_margin then
++                offset_x = edge_margin - card_cx + 0.2
++            elseif card_cx > room_w - edge_margin then
++                offset_x = (room_w - edge_margin) - card_cx - 0.2
++            else
++                offset_x = 0
++            end
++        end
++
+         return {
+             major = self.children.focused_ui or self,
+             parent = self,
+             xy_bond = 'Strong',
+             r_bond = 'Weak',
+             wh_bond = 'Weak',
++            fit_to_room = G.F_PORTRAIT and true or nil,
++            lr_clamp = nil,
++            can_drag = G.F_PORTRAIT and false or nil,
++            snap_to_fit = G.F_PORTRAIT and true or nil,
+             offset = {
+-                x = popup_direction ~= 'cl' and 0 or
+-                    focused_ui and -0.05 or
+-                    (self.ability.consumeable and 0.0) or
+-                    (self.ability.set == 'Voucher' and 0.0) or
+-                    -0.05,
++                x = offset_x,
+                 y = focused_ui and (
+-                            popup_direction == 'tm' and (self.area and self.area == G.hand and -0.08 or-0.15) or
+-                            popup_direction == 'bm' and 0.12 or
++                            popup_direction == 'tm' and offset_y_tm or
++                            popup_direction == 'bm' and offset_y_bm or
+                             0
+                         ) or
+-                    popup_direction == 'tm' and -0.13 or
+-                    popup_direction == 'bm' and 0.1 or
++                    popup_direction == 'tm' and offset_y_tm or
++                    popup_direction == 'bm' and offset_y_bm or
+                     0
+             },  
+             type = popup_direction,
+-            --lr_clamp = true
+         }
+-end
++    end
+ 
+ function Card:hover()
+     self:juice_up(0.05, 0.03)
+@@ -4382,6 +4431,23 @@
+             self.tilt_var.my = ((0.5 + 0.5*self.ambient_tilt*math.sin(tilt_angle))*self.VT.h+self.VT.y+G.ROOM.T.y)*G.TILESIZE*G.TILESCALE
+             self.tilt_var.amt = self.ambient_tilt*(0.5+math.cos(tilt_angle))*tilt_factor
+         end
++
++        -- Portrait/touch fix: clamp the virtual cursor that drives the 3D tilt
++        -- shader to within one card extent of the card's own centre. On desktop the
++        -- cursor already sits on the hovered card so this is a no-op, but on touch the
++        -- stale/far cursor_position (or a TILESCALE change during a canvas refresh)
++        -- could push the tilt distance huge and shear the card into a warped
++        -- parallelogram. Bounding the distance keeps the tilt subtle and warp-proof.
++        if G.TILESCALE and G.TILESIZE and G.ROOM and self.VT then
++            local px = G.TILESIZE*G.TILESCALE
++            local center_x = (self.VT.x + 0.5*self.VT.w + G.ROOM.T.x)*px
++            local center_y = (self.VT.y + 0.5*self.VT.h + G.ROOM.T.y)*px
++            local max_dx = math.max(self.VT.w, 0.1)*px
++            local max_dy = math.max(self.VT.h, 0.1)*px
++            self.tilt_var.mx = math.max(center_x - max_dx, math.min(center_x + max_dx, self.tilt_var.mx))
++            self.tilt_var.my = math.max(center_y - max_dy, math.min(center_y + max_dy, self.tilt_var.my))
++        end
++
+         --Any particles
+         if self.children.particles then self.children.particles:draw() end
+ 
+@@ -4398,7 +4464,12 @@
+                 self.children.buy_button.states.visible = false
+             end
+         end
+-        if self.children.use_button and self.highlighted then self.children.use_button:draw() end
++        local portrait_tray_use = G.F_PORTRAIT and ((self.area == G.jokers) or (self.area == G.consumeables))
++        if self.children.use_button and self.highlighted
++            and not (G.F_PORTRAIT and self.ability.consumeable and self.area == G.pack_cards)
++            and not portrait_tray_use then
++            self.children.use_button:draw()
++        end
+ 
+         if self.vortex then
+             if self.facing == 'back' then 
+@@ -4564,10 +4635,18 @@
+             if k ~= 'focused_ui' and k ~= "front" and k ~= "back" and k ~= "soul_parts" and k ~= "center" and k ~= 'floating_sprite' and k~= "shadow" and k~= "use_button" and k ~= 'buy_button' and k ~= 'buy_and_use_button' and k~= "debuff" and k ~= 'price' and k~= 'particles' and k ~= 'h_popup' then v:draw() end
+         end
+ 
+-        if (layer == 'card' or layer == 'both') and self.area == G.hand then 
++        if (layer == 'card' or layer == 'both') and self.area == G.hand then
+             if self.children.focused_ui then self.children.focused_ui:draw() end
+         end
+ 
++        -- Portrait pack/tray buttons can overlap the selected card, so draw them
++        -- after the front sprite instead of letting the card cover the button.
++        if self.children.use_button and self.highlighted
++            and (G.F_PORTRAIT and self.ability.consumeable and self.area == G.pack_cards
++                or portrait_tray_use) then
++            self.children.use_button:draw()
++        end
++
+         add_to_drawhash(self)
+         self:draw_boundingrect()
+     end
+@@ -4584,13 +4663,40 @@
+     if self.ability.consumeable or self.ability.set == 'Joker' or (self.area and self.area == G.pack_cards) then
+         if self.highlighted and self.area and self.area.config.type ~= 'shop' then
+             local x_off = (self.ability.consumeable and -0.1 or 0)
++            -- A consumable USE button inside a booster pack appears in the gap
++            -- revealed beneath the card when it lifts on highlight (see the
++            -- pack_highlight_lift in CardArea:align_cards). Placed 'bm' (below)
++            -- so it never covers the art or collides with the pack panel.
++            local pack_use = G.F_PORTRAIT and self.ability.consumeable and self.area == G.pack_cards
++            -- align_buttons: Steamodded's flag for card areas whose buttons go
++            -- to the side like the jokers' (mods add such areas); its patch
++            -- targets the vanilla lines this replaces.
++            local is_tray = (self.area == G.jokers) or (self.area == G.consumeables) or (self.area.config.align_buttons and true or false)
++            local tray_off = {x = x_off - 0.4, y = 0}
++            local tray_align = 'cr'
++            if is_tray and G.F_PORTRAIT and G.ROOM and G.ROOM.T and self.T then
++                local button_mult = (PORTRAIT_CONFIG.mobile_ui and PORTRAIT_CONFIG.mobile_ui.card_button_mult) or 1.4
++                local tray_w = 1.25*(button_mult*0.78) + 0.3
++                local room_right = G.ROOM.T.w - 0.12
++                local space_right = room_right - (self.T.x + self.T.w)
++                if space_right < tray_w then
++                    -- Not enough screen left of the right edge for the buttons.
++                    -- Sliding them further under the card only hid them (#44), so
++                    -- the last slot puts its Sell/Use column on the card's other
++                    -- side, where there is always room.
++                    tray_align = 'cl'
++                    tray_off = {x = -(x_off - 0.4), y = 0}
++                end
++            end
+             self.children.use_button = UIBox{
+-                definition = G.UIDEF.use_and_sell_buttons(self), 
++                definition = G.UIDEF.use_and_sell_buttons(self),
+                 config = {align=
+-                        ((self.area == G.jokers) or (self.area == G.consumeables)) and "cr" or
++                        is_tray and tray_align or
++                        pack_use and "bm" or
+                         "bmi"
+-                    , offset = 
+-                        ((self.area == G.jokers) or (self.area == G.consumeables)) and {x=x_off - 0.4,y=0} or
++                    , offset =
++                        is_tray and tray_off or
++                        pack_use and {x=0,y=0.12} or
+                         {x=0,y=0.65},
+                     parent =self}
+             }

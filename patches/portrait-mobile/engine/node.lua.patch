@@ -1,0 +1,51 @@
+--- a/engine/node.lua
++++ b/engine/node.lua
+@@ -119,11 +119,6 @@
+             love.graphics.setLineWidth(3)
+         end
+         love.graphics.rectangle('line', 0, 0, transform.w*G.TILESIZE,transform.h*G.TILESIZE, 3)
+-
+-
+-        --love.graphics.setColor(1, 1, 0, 1)
+-        --love.graphics.print((self.ID or '')..' '..(self.under_overlay and '-' or '+'), transform.w*G.TILESIZE,transform.h*G.TILESIZE, nil, 0.7/G.TILESCALE)
+-
+         love.graphics.pop() 
+     end
+ end
+@@ -273,12 +268,21 @@
+     if self.config and self.config.h_popup then
+         if not self.children.h_popup then 
+             self.config.h_popup_config.instance_type = 'POPUP'
++            if apply_portrait_tooltip_fit then
++                apply_portrait_tooltip_fit(self.config.h_popup_config)
++            end
+             self.children.h_popup = UIBox{
+                 definition = self.config.h_popup,
+                 config = self.config.h_popup_config,
+             }
+             self.children.h_popup.states.collide.can = false
+             self.children.h_popup.states.drag.can = true
++            -- Portrait: tooltips are not dragged (the line above stays vanilla:
++            -- Steamodded hooks its infotip fix in after it).
++            if G.F_PORTRAIT then self.children.h_popup.states.drag.can = false end
++            if prepare_portrait_popup_fit then
++                prepare_portrait_popup_fit(self.children.h_popup)
++            end
+         end
+     end
+ end
+@@ -291,14 +295,6 @@
+     end
+ end
+ 
+---Determine touch behaviour
+-function Node:simple_touch()
+-    return true
+-end
+-
+-function Node:can_long_press() return nil end
+-function Node:can_hover_on_drag() return true end
+-
+ --Called by the CONTROLLER to determine the position the cursor should be set to for this node
+ function Node:put_focused_cursor()
+     return (self.T.x + self.T.w/2 + self.container.T.x)*(G.TILESCALE*G.TILESIZE), (self.T.y + self.T.h/2 + self.container.T.y)*(G.TILESCALE*G.TILESIZE)

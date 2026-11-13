@@ -1,0 +1,24 @@
+--- a/engine/node.lua
++++ b/engine/node.lua
+@@ -268,12 +268,21 @@
+     if self.config and self.config.h_popup then
+         if not self.children.h_popup then 
+             self.config.h_popup_config.instance_type = 'POPUP'
++            if apply_portrait_tooltip_fit then
++                apply_portrait_tooltip_fit(self.config.h_popup_config)
++            end
+             self.children.h_popup = UIBox{
+                 definition = self.config.h_popup,
+                 config = self.config.h_popup_config,
+             }
+             self.children.h_popup.states.collide.can = false
+             self.children.h_popup.states.drag.can = true
++            -- Portrait: tooltips are not dragged (the line above stays vanilla:
++            -- Steamodded hooks its infotip fix in after it).
++            if G.F_PORTRAIT then self.children.h_popup.states.drag.can = false end
++            if prepare_portrait_popup_fit then
++                prepare_portrait_popup_fit(self.children.h_popup)
++            end
+         end
+     end
+ end

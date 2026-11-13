@@ -1,0 +1,175 @@
+--- a/functions/misc_functions.lua
++++ b/functions/misc_functions.lua
+@@ -60,6 +60,130 @@
+   return res_option
+ end
+ 
++local function _version_parts(version)
++  local parts = {}
++  version = tostring(version or "")
++
++  for number in version:gmatch("%d+") do
++    parts[#parts + 1] = tonumber(number)
++  end
++
++  return parts
++end
++
++function compare_version_strings(a, b)
++  local a_parts = _version_parts(a)
++  local b_parts = _version_parts(b)
++  local count = math.max(#a_parts, #b_parts)
++
++  for i = 1, count do
++    local left = a_parts[i] or 0
++    local right = b_parts[i] or 0
++    if left ~= right then
++      return left < right and -1 or 1
++    end
++  end
++
++  return 0
++end
++
++function version_lt(a, b)
++  return compare_version_strings(a, b) < 0
++end
++
++function version_gte(a, b)
++  return compare_version_strings(a, b) >= 0
++end
++
++-- True when text entry goes through the device's own keyboard. Balatro also has
++-- an on-screen keyboard for controllers, and on a phone both used to open at
++-- once: the system keyboard over the bottom half and the game's own drawn behind
++-- the menu, whose buttons stayed clickable through it (#44).
++function uses_system_keyboard()
++    if not (love and love.system and love.system.getOS) then return false end
++    local os_name = love.system.getOS()
++    return os_name == 'Android' or os_name == 'iOS'
++end
++
++-- The device keyboard covers the bottom of the screen and the game knows nothing
++-- about it, so a field low in a menu stays hidden behind it while you type (#44,
++-- the seed box). Lift the whole menu until the focused field sits near the top,
++-- then put it back when the keyboard closes.
++local keyboard_lift_target = 0.22
++
++function portrait_lift_for_keyboard()
++  local box = G and G.OVERLAY_MENU
++  local hook = G and G.CONTROLLER and G.CONTROLLER.text_input_hook
++  if not (box and hook and hook.T and G.ROOM and G.ROOM.T and G.F_PORTRAIT) then return end
++  if box.portrait_keyboard_lift then return end
++
++  local lift = hook.T.y - (G.ROOM.T.h or 20)*keyboard_lift_target
++  if lift <= 0 then return end
++
++  box.portrait_keyboard_lift = lift
++  box.alignment.offset.y = (box.alignment.offset.y or 0) - lift
++  if box.align_to_major then box:align_to_major() end
++end
++
++function portrait_drop_after_keyboard()
++  local box = G and G.OVERLAY_MENU
++  if not (box and box.portrait_keyboard_lift) then return end
++
++  box.alignment.offset.y = (box.alignment.offset.y or 0) + box.portrait_keyboard_lift
++  box.portrait_keyboard_lift = nil
++  if box.align_to_major then box:align_to_major() end
++end
++
++-- The keyboard can go away without a key the game sees: the chevron under Gboard,
++-- a back swipe. SDL stops text input when it does, and the edit ends as Enter ends
++-- it, or the menu stays lifted over nothing (#4).
++local text_input_asked = false
++
++-- Every frame. A mod can end the edit on its own too: Cryptid has its own
++-- text_input_key, which lets go of the field and leaves the rest to nobody.
++function portrait_watch_text_input()
++  if not text_input_asked then return end
++  if not G.CONTROLLER.text_input_hook then
++    set_mobile_text_input(false)
++  elseif love.keyboard.hasTextInput and not love.keyboard.hasTextInput() then
++    G.FUNCS.text_input_key({key = 'return'})
++  end
++end
++
++-- A tap beside the field ends the edit too, for a keyboard that closed without
++-- word. The field itself is left alone: that tap moves the cursor or reopens it.
++function portrait_tap_ends_edit(target)
++  local hook = G.CONTROLLER.text_input_hook
++  if not (hook and uses_system_keyboard()) then return end
++  local node = hook
++  while node do
++    if node == target then return end
++    if node.config and node.config.button == 'select_text_input' then break end
++    node = node.parent
++  end
++  G.FUNCS.text_input_key({key = 'return'})
++end
++
++function set_mobile_text_input(enabled)
++  text_input_asked = enabled and true or false
++  if uses_system_keyboard() then
++    if enabled then portrait_lift_for_keyboard() else portrait_drop_after_keyboard() end
++  end
++
++  if not (love and love.keyboard and love.keyboard.setTextInput and love.system and love.system.getOS) then
++    return
++  end
++
++  local os_name = love.system.getOS()
++  if os_name ~= 'Android' and os_name ~= 'iOS' then
++    return
++  end
++
++  pcall(function()
++    love.keyboard.setTextInput(enabled and true or false)
++  end)
++end
++
+ function timer_checkpoint(label, type, reset)
+   G.PREV_GARB = G.PREV_GARB or 0
+   if not G.F_ENABLE_PERF_OVERLAY then return end
+@@ -694,6 +818,23 @@
+ 
+ function play_sound(sound_code, per, vol)
+   if G.F_MUTE then return end
++  
++  if love and love.system and love.system.getOS and love.system.getOS() == 'Android' and love.system.vibrate and haptics_enabled() then
++    if sound_code == 'button1' or sound_code == 'button2' or sound_code == 'paper1' then
++      portrait_vibrate(0.01)
++    elseif sound_code == 'card1' or sound_code == 'cardSlide1' or sound_code == 'cardSlide2' then
++      portrait_vibrate(0.012)
++    elseif sound_code == 'cardFan2' then
++      portrait_vibrate(0.018)
++    elseif sound_code == 'coin1' or sound_code == 'coin2' or sound_code == 'chips1' or sound_code == 'chips2' then
++      portrait_vibrate(0.02)
++    elseif sound_code == 'tarot2' or sound_code == 'timpani' or sound_code == 'whoosh1' or sound_code == 'tarot1' or sound_code == 'tarotinfo' then
++      portrait_vibrate(0.03)
++    elseif sound_code == 'cancel' or sound_code == 'error' then
++      portrait_vibrate(0.04)
++    end
++  end
++
+   if sound_code and G.SETTINGS.SOUND.volume > 0.001 then
+     G.ARGS.play_sound = G.ARGS.play_sound or {}
+     G.ARGS.play_sound.type = 'sound'
+@@ -1760,6 +1901,7 @@
+         end
+         local desc_scale = G.LANG.font.DESCSCALE
+         if G.F_MOBILE_UI then desc_scale = desc_scale*1.5 end
++        if args.desc_scale then desc_scale = desc_scale*args.desc_scale end
+         if args.type == 'name' then
+           final_line[#final_line+1] = {n=G.UIT.O, config={
+             object = DynaText({string = {assembled_string},
+@@ -1874,6 +2016,9 @@
+     reroll_cost = 5,
+     joker_slots = 5,
+     ante_scaling = 1,
++    play_limit = 5,
++    discard_limit = 5,
++    no_limit = '',
+     consumable_slots = 2,
+     no_faces = false,
+     erratic_suits_and_ranks = false,

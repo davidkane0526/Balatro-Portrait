@@ -1,0 +1,79 @@
+--- a/back.lua
++++ b/back.lua
+@@ -25,7 +25,7 @@
+ 
+ function Back:generate_UI(other, ui_scale, min_dims, challenge)
+     min_dims = min_dims or 0.7
+-    ui_scale = ui_scale or 0.9
++    ui_scale = ui_scale or 1
+     local back_config = other or self.effect.center
+     local name_to_check = other and other.name or self.name
+     local effect_config = other and other.config  or self.effect.config
+@@ -34,22 +34,27 @@
+     local loc_args, loc_nodes = nil, {}
+ 
+     if not back_config.unlocked then
+-        if not back_config.unlock_condition or back_config.demo then 
+-            localize{type = 'descriptions', key = 'demo_locked', set = "Other", nodes = loc_nodes, vars = loc_args}
++        if not back_config.unlock_condition then 
++            -- localized_by_smods: Steamodded's guard against writing the text
++            -- twice, which its patch puts round the vanilla line; this one has
++            -- the portrait desc_scale, so the guard is written out here.
++            if not localized_by_smods then
++                localize{type = 'descriptions', key = 'demo_locked', set = "Other", nodes = loc_nodes, vars = loc_args, desc_scale = ui_scale}
++            end
+         elseif back_config.unlock_condition.type == 'win_deck' then
+             local other_name = localize('k_unknown')
+             if G.P_CENTERS[back_config.unlock_condition.deck].unlocked then 
+                 other_name = localize{type = 'name_text', set = 'Back', key = back_config.unlock_condition.deck}
+             end
+             loc_args = {other_name}
+-            localize{type = 'descriptions', key = 'deck_locked_win', set = "Other", nodes = loc_nodes, vars = loc_args}
++            localize{type = 'descriptions', key = 'deck_locked_win', set = "Other", nodes = loc_nodes, vars = loc_args, desc_scale = ui_scale}
+         elseif back_config.unlock_condition.type == 'discover_amount' then 
+             loc_args = {tostring(back_config.unlock_condition.amount)}
+-            localize{type = 'descriptions', key = 'deck_locked_discover', set = "Other", nodes = loc_nodes, vars = loc_args}
++            localize{type = 'descriptions', key = 'deck_locked_discover', set = "Other", nodes = loc_nodes, vars = loc_args, desc_scale = ui_scale}
+         elseif back_config.unlock_condition.type == 'win_stake' then 
+             local other_name = localize{type = 'name_text', set = 'Stake', key = G.P_CENTER_POOLS.Stake[back_config.unlock_condition.stake].key}
+             loc_args = {other_name, colours = {get_stake_col(back_config.unlock_condition.stake)}}
+-            localize{type = 'descriptions', key = 'deck_locked_stake', set = "Other", nodes = loc_nodes, vars = loc_args}
++            localize{type = 'descriptions', key = 'deck_locked_stake', set = "Other", nodes = loc_nodes, vars = loc_args, desc_scale = ui_scale}
+         end
+     else
+         if name_to_check == 'Blue Deck' then loc_args = {effect_config.hands}
+@@ -70,7 +75,7 @@
+         elseif name_to_check == 'Plasma Deck' then loc_args = {effect_config.ante_scaling}
+         elseif name_to_check == 'Erratic Deck' then
+         end
+-        localize{type = 'descriptions', key = back_config.key, set = 'Back', nodes = loc_nodes, vars = loc_args}
++        localize{type = 'descriptions', key = back_config.key, set = 'Back', nodes = loc_nodes, vars = loc_args, desc_scale = ui_scale}
+     end
+ 
+     return 
+@@ -83,7 +88,6 @@
+ function Back:change_to(new_back)
+     if not new_back then new_back = G.P_CENTERS.b_red end
+     self.name = new_back.name or 'Red Deck'
+-
+     self.effect = {
+         center = new_back,
+         text_UI = '',
+@@ -100,7 +104,6 @@
+         name = self.name,
+         pos = self.pos,
+         effect = self.effect,
+-
+         key = self.effect.center.key or 'b_red'
+     }
+ 
+@@ -283,8 +286,8 @@
+     self.name = backTable.name
+     self.pos = backTable.pos
+     self.effect = backTable.effect
+-    
+     self.effect.center = G.P_CENTERS[backTable.key] or G.P_CENTERS.b_red
+ 
++
+     self.loc_name = localize{type = 'name_text', set = 'Back', key = self.effect.center.key}
+ end

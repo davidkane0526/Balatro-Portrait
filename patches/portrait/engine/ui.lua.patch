@@ -1,0 +1,605 @@
+--- a/engine/ui.lua
++++ b/engine/ui.lua
+@@ -29,6 +29,9 @@
+     if args.config then
+         self.config = args.config
+         args.config.major = args.config.major or args.config.parent or self
++        if args.config.instance_type == 'POPUP' and apply_portrait_tooltip_fit then
++            apply_portrait_tooltip_fit(args.config)
++        end
+ 
+         self:set_alignment({
+             major = args.config.major,
+@@ -45,11 +48,14 @@
+         }
+         self.states.collide.can = true
+ 
+-        if args.config.can_collide == nil then 
++        if args.config.can_collide == nil then
+             self.states.collide.can = true
+         else
+             self.states.collide.can = args.config.can_collide
+         end
++        if args.config.can_drag ~= nil then
++            self.states.drag.can = args.config.can_drag
++        end
+ 
+         self.parent = self.config.parent
+     end
+@@ -84,13 +90,17 @@
+         self.VT.y = self.VT.y - self.Mid.role.offset.y + (self.Mid.parent.config.padding or 0)
+     end
+ 
+-    if self.alignment and self.alignment.lr_clamp then
++    if self.config and self.config.fit_to_room then
++        self:fit_to_room()
++    elseif self.alignment and self.alignment.lr_clamp then
+         self:lr_clamp()
+     end
+-    
++    if self.config and self.config.snap_to_fit and prepare_portrait_popup_fit then
++        prepare_portrait_popup_fit(self)
++    end
+     self.UIRoot:initialize_VT(true)
+-    if getmetatable(self) == UIBox then 
+-        if args.config.instance_type then 
++    if getmetatable(self) == UIBox then
++        if args.config.instance_type then
+             table.insert(G.I[args.config.instance_type], self)
+         else
+             table.insert(G.I.UIBOX, self)
+@@ -125,7 +135,7 @@
+     local padding = node.config.padding or G.UIT.padding
+     --current node does not contain anything
+     if node.UIT == G.UIT.B or node.UIT == G.UIT.T or node.UIT == G.UIT.O then
+-        _nt.x, _nt.y, _nt.w, _nt.h = 
++        _nt.x, _nt.y, _nt.w, _nt.h =
+                 _T.x,
+                 _T.y,
+                 node.config.w or (node.config.object and node.config.object.T.w),
+@@ -143,7 +153,7 @@
+             local tx = node.config.lang.font.FONT:getWidth(node.config.text)*node.config.lang.font.squish*scale*G.TILESCALE*node.config.lang.font.FONTSCALE
+             local ty = node.config.lang.font.FONT:getHeight()*scale*G.TILESCALE*node.config.lang.font.FONTSCALE*node.config.lang.font.TEXT_HEIGHT_SCALE
+             if node.config.vert then local thunk = tx; tx = ty; ty = thunk end
+-            _nt.x, _nt.y, _nt.w, _nt.h = 
++            _nt.x, _nt.y, _nt.w, _nt.h =
+                 _T.x,
+                 _T.y,
+                 tx/(G.TILESIZE*G.TILESCALE),
+@@ -162,31 +172,36 @@
+         return _nt.w, _nt.h
+     else --For all other node containers, treat them explicitly like a column
+         for i = 1, 2 do
+-            if i == 1 or (i == 2 and ((node.config.maxw and _ct.w > node.config.maxw) or (node.config.maxh and _ct.h > node.config.maxh))) then 
++            if i == 1 or (i == 2 and ((node.config.maxw and _ct.w > node.config.maxw) or (node.config.maxh and _ct.h > node.config.maxh))) then
+                 local fac = _scale or 1
+                 if i == 2 then
+                     local restriction = node.config.maxw or node.config.maxh
+                     fac = fac*restriction/(node.config.maxw and _ct.w or _ct.h)
+                 end
+-                _nt.x, _nt.y, _nt.w, _nt.h = 
++                _nt.x, _nt.y, _nt.w, _nt.h =
+                     _T.x,
+                     _T.y,
+                     node.config.minw or 0,
+                     node.config.minh or 0
+-                
++
+                 if node.UIT == G.UIT.ROOT then
+                     _nt.x, _nt.y, _nt.w, _nt.h = 0, 0, node.config.minw or 0, node.config.minh or 0
+                 end
+                 _ct.x, _ct.y, _ct.w, _ct.h = _nt.x+padding, _nt.y+padding, 0, 0
+                 local _tw, _th
+                 for k, v in ipairs(node.children) do
+-                    if getmetatable(v) == UIElement then  
++                    if getmetatable(v) == UIElement then
+                         if v.config and v.config.scale then v.config.scale = v.config.scale*fac end
+-                        _tw, _th = self:calculate_xywh(v, _ct, recalculate, fac)
+-                        if _th and _tw then 
+-                            if v.UIT == G.UIT.R then 
++                        -- The second pass (content over maxw, scaled down) lays out
++                        -- children the first pass already made: as a recalculation,
++                        -- or they are initialised again and stay in G.MOVEABLES
++                        -- after the box is removed (portrait: they kept moving the
++                        -- button bar, and through it a hand that was gone).
++                        _tw, _th = self:calculate_xywh(v, _ct, recalculate or i == 2, fac)
++                        if _th and _tw then
++                            if v.UIT == G.UIT.R then
+                                 _ct.h = _ct.h + _th + padding
+-                                _ct.y = _ct.y + _th + padding         
++                                _ct.y = _ct.y + _th + padding
+                                 if _tw + padding > _ct.w then _ct.w = _tw + padding end
+                                 if v.config and v.config.emboss then
+                                     _ct.h = _ct.h + v.config.emboss
+@@ -210,7 +225,7 @@
+         node.content_dimensions.w = _ct.w + padding
+         node.content_dimensions.h = _ct.h + padding
+         _nt.w = math.max(_ct.w + padding, _nt.w)
+-        _nt.h = math.max(_ct.h + padding, _nt.h)-- 
++        _nt.h = math.max(_ct.h + padding, _nt.h)--
+         node:set_values(_nt, recalculate)
+         return _nt.w, _nt.h
+     end
+@@ -222,7 +237,7 @@
+         if self:remove_group(v, group) then node.children[k] = nil end
+     end
+     if node.config and node.config.group and node.config.group == group then node:remove(); return true end
+-    
++
+     if not node.parent or true then self:calculate_xywh(self.UIRoot, self.T, true); self.UIRoot:set_wh(); self.UIRoot:set_alignment() end--self:recalculate() end
+ end
+ 
+@@ -258,12 +273,12 @@
+     end
+ 
+     if not parent then
+-        self.UIRoot = UIE 
++        self.UIRoot = UIE
+         self.UIRoot.parent = self
+     else
+         table.insert(parent.children, UIE)
+     end
+-    if node.config and node.config.mid then 
++    if node.config and node.config.mid then
+         self.Mid = UIE
+     end
+ end
+@@ -305,7 +320,7 @@
+ 
+ function UIBox:recalculate()
+     --Calculate the correct dimensions and width/height and offset for each node
+-    self:calculate_xywh(self.UIRoot, self.T, true)  
++    self:calculate_xywh(self.UIRoot, self.T, true)
+     --Then, calculate the correct width and height for each container
+     self.UIRoot:set_wh()
+     --Then, set all of the correct alignments for the ui elements
+@@ -313,15 +328,57 @@
+     self.T.w = self.UIRoot.T.w
+     self.T.h = self.UIRoot.T.h
+     G.REFRESH_FRAME_MAJOR_CACHE = (G.REFRESH_FRAME_MAJOR_CACHE or 0) + 1
++    if self.config and self.config.fit_to_room then
++        self:align_to_major()
++        self:fit_to_room()
++        if self.config.snap_to_fit and prepare_portrait_popup_fit then
++            prepare_portrait_popup_fit(self)
++        end
++    end
+     self.UIRoot:initialize_VT()
+     G.REFRESH_FRAME_MAJOR_CACHE = (G.REFRESH_FRAME_MAJOR_CACHE > 1 and G.REFRESH_FRAME_MAJOR_CACHE - 1 or nil)
+ end
+ 
+ function UIBox:move(dt)
+     Moveable.move(self, dt)
++    self:fit_to_room()
++    if self.config and self.config.snap_to_fit and prepare_portrait_popup_fit then
++        prepare_portrait_popup_fit(self)
++    end
+     Moveable.move(self.UIRoot, dt)
+ end
+ 
++function UIBox:fit_to_room()
++    if not (G and G.F_PORTRAIT and G.ROOM and G.ROOM.T and self.config and self.config.fit_to_room) then return end
++
++    local dx, dy = 0, 0
++    if get_portrait_room_fit_delta then
++        dx, dy = get_portrait_room_fit_delta(self, {
++            screen_padding = self.config.screen_padding,
++            touch_above_cursor = self.config.touch_above_cursor,
++            touch_gap = self.config.touch_gap
++        })
++    end
++
++    if dx ~= 0 or dy ~= 0 then
++        -- What a box holds follows its alignment, not T: moved on T alone, the box
++        -- fit the screen and its text stayed where it was, off the edge.
++        if self.role and self.role.role_type == 'Minor' and self.alignment and self.alignment.offset then
++            self.alignment.offset.x = self.alignment.offset.x + dx
++            self.alignment.offset.y = self.alignment.offset.y + dy
++            self:align_to_major()
++        end
++        self.T.x = self.T.x + dx
++        self.T.y = self.T.y + dy
++        self.VT.x = self.T.x
++        self.VT.y = self.T.y
++        self:calculate_parrallax()
++        if self.UIRoot and self.UIRoot.initialize_VT then
++            self.UIRoot:initialize_VT()
++        end
++    end
++end
++
+ function UIBox:drag(offset)
+     Moveable.drag(self,offset)
+     Moveable.move(self.UIRoot, dt)
+@@ -364,7 +421,7 @@
+         self.states.drag.can = false
+         self.static_rotation = true
+     else
+-        self.T.x = _T.x 
++        self.T.x = _T.x
+         self.T.y = _T.y
+         self.T.w = _T.w
+         self.T.h = _T.h
+@@ -373,7 +430,7 @@
+     if self.config.button_UIE then self.states.collide.can = true; self.states.hover.can = false; self.states.click.can = true end
+     if self.config.button then self.states.collide.can = true; self.states.click.can = true end
+ 
+-    if self.config.on_demand_tooltip or self.config.tooltip or self.config.detailed_tooltip then 
++    if self.config.on_demand_tooltip or self.config.tooltip or self.config.detailed_tooltip then
+         self.states.collide.can = true
+     end
+ 
+@@ -395,7 +452,7 @@
+     end
+ 
+     if self.config and self.config.ref_value and self.config.ref_table then
+-        self.config.prev_value = self.config.ref_table[self.config.ref_value]   
++        self.config.prev_value = self.config.ref_table[self.config.ref_value]
+     end
+ 
+     if self.UIT == G.UIT.T then self.static_rotation = true end
+@@ -409,7 +466,7 @@
+         if self.UIT == G.UIT.R then self:juice_up() end
+         self.config.juice = false
+     end
+-    
++
+     if not self.config.colour then
+         if self.UIT == G.UIT.ROOT then self.config.colour = G.C.UI.BACKGROUND_DARK end
+         if self.UIT == G.UIT.T then self.config.colour = G.C.UI.TEXT_LIGHT end
+@@ -427,7 +484,7 @@
+         if self.UIT == G.UIT.R then self.config.outline_colour = G.C.UI.OUTLINE_LIGHT end
+     end
+ 
+-    if self.config.focus_args and not self.config.focus_args.registered then 
++    if self.config.focus_args and not self.config.focus_args.registered then
+         if self.config.focus_args.button then
+             G.CONTROLLER:add_to_registry(self.config.button_UIE or self, self.config.focus_args.button)
+         end
+@@ -436,7 +493,7 @@
+             G.CONTROLLER:snap_to{node = self}
+         end
+ 
+-        if self.config.focus_args.funnel_to then 
++        if self.config.focus_args.funnel_to then
+             local _par = self.parent
+             while _par and _par:is(UIElement) do
+                 if _par.config.focus_args and _par.config.focus_args.funnel_from then
+@@ -469,23 +526,23 @@
+         if v == self.UIT then UIT = ''..k end
+     end
+     local box_str = '\n'..(string.rep("  ", indent))..'| '..UIT..' | - ID:'..self.ID..' w/h:'..self.T.w..'/'..self.T.h
+-    if UIT == 'O' then 
++    if UIT == 'O' then
+         box_str = box_str..' OBJ:'..(
+-            getmetatable(self.config.object) == CardArea and 'CardArea' or 
+-            getmetatable(self.config.object) == Card and 'Card' or 
+-            getmetatable(self.config.object) == UIBox and 'UIBox' or 
+-            getmetatable(self.config.object) == Particles and 'Particles' or 
+-            getmetatable(self.config.object) == DynaText and 'DynaText' or 
++            getmetatable(self.config.object) == CardArea and 'CardArea' or
++            getmetatable(self.config.object) == Card and 'Card' or
++            getmetatable(self.config.object) == UIBox and 'UIBox' or
++            getmetatable(self.config.object) == Particles and 'Particles' or
++            getmetatable(self.config.object) == DynaText and 'DynaText' or
+             getmetatable(self.config.object) == Sprite and 'Sprite' or
+-            getmetatable(self.config.object) == AnimatedSprite and 'AnimatedSprite' or 
++            getmetatable(self.config.object) == AnimatedSprite and 'AnimatedSprite' or
+             'OTHER'
+         )
+-    elseif UIT == 'T' then 
++    elseif UIT == 'T' then
+         box_str = box_str..' TEXT:'..(self.config.text or 'REF')
+     end
+ 
+     for k, v in ipairs(self.children) do
+-        if v.print_topology then 
++        if v.print_topology then
+             box_str = box_str..v:print_topology(indent+1)
+         end
+     end
+@@ -517,7 +574,7 @@
+ end
+ 
+ function UIElement:juice_up(amount, rot_amt)
+-    if self.UIT == G.UIT.O then 
++    if self.UIT == G.UIT.O then
+         if self.config.object then self.config.object:juice_up(amount, rot_amt) end
+     else
+         Moveable.juice_up(self, amount, rot_amt)
+@@ -535,9 +592,9 @@
+ function UIElement:draw_children(layer)
+     if self.states.visible then
+         for k, v in pairs(self.children) do
+-            if not v.config.draw_layer and k ~= 'h_popup' and k~= 'alert' then 
++            if not v.config.draw_layer and k ~= 'h_popup' and k~= 'alert' then
+                 if v.draw_self and not v.config.draw_after then v:draw_self() else v:draw() end
+-                if v.draw_children then v:draw_children() end 
++                if v.draw_children then v:draw_children() end
+                 if v.draw_self and v.config.draw_after then v:draw_self() else v:draw() end
+             end
+         end
+@@ -549,12 +606,12 @@
+     local padding = (self.config and self.config.padding) or G.UIT.padding
+ 
+     local _max_w, _max_h = 0,0
+-    
++
+     if next(self.children) == nil or self.config.no_fill then
+         return self.T.w, self.T.h
+     else
+         for k, w in pairs(self.children) do
+-            if w.set_wh then 
++            if w.set_wh then
+                 local _cw, _ch = w:set_wh()
+                 if _cw and _ch then
+                     if _cw > _max_w then _max_w = _cw end
+@@ -577,7 +634,7 @@
+     self.role.offset.y = self.role.offset.y + y
+     self.role.offset.x = self.role.offset.x + x
+     for _, v in pairs(self.children) do
+-        if v.align then 
++        if v.align then
+             v:align(x, y)
+         end
+     end
+@@ -590,16 +647,16 @@
+     --bottom is b
+     --right is r
+     for k, v in pairs(self.children) do
+-        if self.config and self.config.align and v.align then 
++        if self.config and self.config.align and v.align then
+ 
+             local padding = self.config.padding or G.UIT.padding
+ 
+-            if string.find(self.config.align, "c") then   
++            if string.find(self.config.align, "c") then
+                 if v.UIT == G.UIT.T or v.UIT == G.UIT.B or v.UIT == G.UIT.O then
+                     v:align(0,0.5*(self.T.h - 2*padding - v.T.h))
+                 else
+                     v:align(0,0.5*(self.T.h - self.content_dimensions.h))
+-                end 
++                end
+             end
+             if string.find(self.config.align, "m") then
+                 v:align(0.5*(self.T.w - self.content_dimensions.w),0)
+@@ -624,7 +681,7 @@
+         self.config.text = tostring(self.config.ref_table[self.config.ref_value])
+         self.config.text_drawable:set(self.config.text)
+         if not self.config.no_recalc and self.config.prev_value and string.len(self.config.prev_value) ~= string.len(self.config.text) then self.UIBox:recalculate() end
+-        self.config.prev_value = self.config.ref_table[self.config.ref_value] 
++        self.config.prev_value = self.config.ref_table[self.config.ref_value]
+     end
+ end
+ 
+@@ -661,7 +718,7 @@
+     end
+ end
+ function UIElement:draw_self()
+-    if not self.states.visible then 
++    if not self.states.visible then
+         if self.config.force_focus then add_to_drawhash(self) end
+         return
+     end
+@@ -674,10 +731,10 @@
+     local parallax_dist = 1.5
+     local button_being_pressed = false
+ 
+-    if (self.config.button or self.config.button_UIE) then        
++    if (self.config.button or self.config.button_UIE) then
+         self.layered_parallax.x = ((self.parent and self.parent ~= self.UIBox and self.parent.layered_parallax.x or 0) + (self.config.shadow and 0.4*self.shadow_parrallax.x or 0)/G.TILESIZE)
+         self.layered_parallax.y = ((self.parent and self.parent ~= self.UIBox and self.parent.layered_parallax.y or 0) + (self.config.shadow and 0.4*self.shadow_parrallax.y or 0)/G.TILESIZE)
+-            
++
+         if self.config.button and ((self.last_clicked and self.last_clicked > G.TIMERS.REAL - 0.1) or ((self.config.button and (self.states.hover.is or self.states.drag.is))
+             and G.CONTROLLER.is_cursor_down)) then
+                 self.layered_parallax.x = self.layered_parallax.x - parallax_dist*self.shadow_parrallax.x/G.TILESIZE*(self.config.button_dist or 1)
+@@ -689,14 +746,20 @@
+         if self.config.button_UIE and not self.config.button_UIE.config.button then button_active = false end
+     end
+     if self.config.colour[4] > 0.01 then
+-        if self.UIT == G.UIT.T and self.config.scale then 
++        if self.UIT == G.UIT.T and self.config.scale then
+             self.ARGS.text_parallax = self.ARGS.text_parallax or {}
+             self.ARGS.text_parallax.sx = -self.shadow_parrallax.x*0.5/(self.config.scale*self.config.lang.font.FONTSCALE)
+             self.ARGS.text_parallax.sy = -self.shadow_parrallax.y*0.5/(self.config.scale*self.config.lang.font.FONTSCALE)
++            local text_offset_x = self.config.text_offset_x or 0
++            local text_offset_y = self.config.text_offset_y or 0
+ 
+-            if (self.config.button_UIE and button_active) or (not self.config.button_UIE and self.config.shadow and G.SETTINGS.GRAPHICS.shadows == 'On') then 
++            if (self.config.button_UIE and button_active) or (not self.config.button_UIE and self.config.shadow and G.SETTINGS.GRAPHICS.shadows == 'On') then
+                 prep_draw(self, 0.97)
+                 if self.config.vert then love.graphics.translate(0,self.VT.h); love.graphics.rotate(-math.pi/2) end
++                -- The portrait label offset as a translate, so the draw calls
++                -- below stay the vanilla lines Steamodded's text shader patch
++                -- (ui_elements.toml) looks for.
++                if text_offset_x ~= 0 or text_offset_y ~= 0 then love.graphics.translate(text_offset_x, text_offset_y) end
+                 if (self.config.shadow or (self.config.button_UIE and button_active)) and G.SETTINGS.GRAPHICS.shadows == 'On' then
+                     love.graphics.setColor(0, 0, 0, 0.3*self.config.colour[4])
+                     love.graphics.draw(
+@@ -713,6 +776,7 @@
+ 
+             prep_draw(self, 1)
+             if self.config.vert then love.graphics.translate(0,self.VT.h); love.graphics.rotate(-math.pi/2) end
++            if text_offset_x ~= 0 or text_offset_y ~= 0 then love.graphics.translate(text_offset_x, text_offset_y) end
+             if not button_active then
+                 love.graphics.setColor(G.C.UI.TEXT_INACTIVE)
+             else
+@@ -734,19 +798,19 @@
+                 love.graphics.scale(0.98)
+                 if self.config.shadow_colour then
+                     love.graphics.setColor(self.config.shadow_colour)
+-                else 
++                else
+                     love.graphics.setColor(0,0,0,0.3*self.config.colour[4])
+                 end
+-                if self.config.r and self.VT.w > 0.01 then 
++                if self.config.r and self.VT.w > 0.01 then
+                     self:draw_pixellated_rect('shadow', parallax_dist)
+                 else
+                     love.graphics.rectangle('fill', -self.shadow_parrallax.x*parallax_dist, -self.shadow_parrallax.y*parallax_dist, self.VT.w*G.TILESIZE, self.VT.h*G.TILESIZE)
+                 end
+                 love.graphics.scale(1/0.98)
+             end
+-            
++
+             love.graphics.scale(button_being_pressed and 0.985 or 1)
+-            if self.config.emboss then 
++            if self.config.emboss then
+                 love.graphics.setColor(darken(self.config.colour, self.states.hover.is and 0.5 or 0.3, true))
+                 self:draw_pixellated_rect('emboss', parallax_dist, self.config.emboss)
+             end
+@@ -756,8 +820,8 @@
+             self.ARGS.button_colours[2] = (((collided_button.config.hover and collided_button.states.hover.is) or (collided_button.last_clicked and collided_button.last_clicked > G.TIMERS.REAL - 0.1)) and G.C.UI.HOVER or nil)
+             for k, v in ipairs(self.ARGS.button_colours) do
+                 love.graphics.setColor(v)
+-                if self.config.r and self.VT.w > 0.01 then 
+-                    if self.config.button_delay then 
++                if self.config.r and self.VT.w > 0.01 then
++                    if self.config.button_delay then
+                         love.graphics.setColor(G.C.GREY)
+                         self:draw_pixellated_rect('fill', parallax_dist)
+                         love.graphics.setColor(v)
+@@ -777,7 +841,7 @@
+             love.graphics.pop()
+         elseif self.UIT == G.UIT.O and self.config.object then
+             --Draw the outline for highlighted objext
+-            if self.config.focus_with_object and self.config.object.states.focus.is then 
++            if self.config.focus_with_object and self.config.object.states.focus.is then
+                 self.object_focus_timer = self.object_focus_timer or G.TIMERS.REAL
+                 local lw = 50*math.max(0, self.object_focus_timer - G.TIMERS.REAL + 0.3)^2
+                 prep_draw(self, 1)
+@@ -794,19 +858,19 @@
+             self.config.object:draw()
+         end
+     end
+-    
++
+     --Draw the outline of the object
+     if self.config.outline and self.config.outline_colour[4] > 0.01 then
+-        if self.config.outline then      
++        if self.config.outline then
+             prep_draw(self, 1)
+             love.graphics.scale(1/(G.TILESIZE))
+             love.graphics.setLineWidth(self.config.outline)
+-            if self.config.line_emboss then 
++            if self.config.line_emboss then
+                 love.graphics.setColor(darken(self.config.outline_colour, self.states.hover.is and 0.5 or 0.3, true))
+                 self:draw_pixellated_rect('line_emboss', parallax_dist, self.config.line_emboss)
+             end
+             love.graphics.setColor(self.config.outline_colour)
+-            if self.config.r and self.VT.w > 0.01 then 
++            if self.config.r and self.VT.w > 0.01 then
+                 self:draw_pixellated_rect('line', parallax_dist)
+             else
+                 love.graphics.rectangle('line', 0,0, self.VT.w*G.TILESIZE, self.VT.h*G.TILESIZE)
+@@ -816,7 +880,7 @@
+     end
+ 
+     --Draw the outline for highlighted buttons
+-    if self.states.focus.is then 
++    if self.states.focus.is then
+         self.focus_timer = self.focus_timer or G.TIMERS.REAL
+         local lw = 50*math.max(0, self.focus_timer - G.TIMERS.REAL + 0.3)^2
+         prep_draw(self, 1)
+@@ -832,7 +896,7 @@
+     end
+ 
+     --Draw the 'chosen triangle'
+-    if self.config.chosen then 
++    if self.config.chosen then
+         prep_draw(self, 0.98)
+         love.graphics.scale(1/(G.TILESIZE))
+         if self.config.shadow and G.SETTINGS.GRAPHICS.shadows == 'On' then
+@@ -859,7 +923,7 @@
+         self.pixellated_rect.sw ~= self.shadow_parrallax.x or
+         self.pixellated_rect.sh ~= self.shadow_parrallax.y or
+         self.pixellated_rect.progress ~= (_progress or 1)
+-    then 
++    then
+         self.pixellated_rect = {
+             w = self.VT.w,
+             h = self.VT.h,
+@@ -963,20 +1027,58 @@
+ end
+ 
+ function UIElement:click()
++    local function _dbg(msg)
++        if _RELEASE_MODE then return end
++        msg = tostring(msg or "")
++        print("BALATRO_UI: " .. msg)
++        if love and love.system and love.system.getOS and love.system.getOS() == 'Android' then
++            pcall(function()
++                local p = io.popen('log -t "BALATRO_UI" "'..msg:gsub('"', '\\"')..'"', 'w')
++                if p then p:close() end
++            end)
++        end
++    end
++
++    if not self.config then
++        _dbg("click() ignored: no config")
++    end
++
++    if self.config and self.config.button then
++        _dbg(string.format(
++            "click() attempt: id=%s button=%s visible=%s under_overlay=%s disable_button=%s last_clicked=%s now=%s",
++            tostring(self.config.id),
++            tostring(self.config.button),
++            tostring(self.states and self.states.visible),
++            tostring(self.under_overlay),
++            tostring(self.disable_button),
++            tostring(self.last_clicked),
++            tostring(G and G.TIMERS and G.TIMERS.REAL)
++        ))
++    end
++
+     if self.config.button and (not self.last_clicked or self.last_clicked + 0.1 < G.TIMERS.REAL) and self.states.visible and not self.under_overlay and not self.disable_button then
+         if self.config.one_press then self.disable_button = true end
+         self.last_clicked = G.TIMERS.REAL
+ 
+         --Removes a layer from the overlay menu stack
+-        if self.config.id == 'overlay_menu_back_button' then 
++        if self.config.id == 'overlay_menu_back_button' then
+             G.CONTROLLER:mod_cursor_context_layer(-1)
+             G.NO_MOD_CURSOR_STACK = true
+         end
+         if G.OVERLAY_TUTORIAL and G.OVERLAY_TUTORIAL.button_listen == self.config.button then
++            _dbg("overlay tutorial intercept: calling tut_next()")
+             G.FUNCS.tut_next()
+         end
+-        G.FUNCS[self.config.button](self)
+-        
++
++        if not (G and G.FUNCS) then
++            _dbg("ERROR: G.FUNCS is nil")
++        elseif type(G.FUNCS[self.config.button]) ~= "function" then
++            _dbg("ERROR: missing callback for button=" .. tostring(self.config.button))
++        else
++            _dbg("dispatching callback: " .. tostring(self.config.button))
++            G.FUNCS[self.config.button](self)
++        end
++
+         G.NO_MOD_CURSOR_STACK = nil
+ 
+         if self.config.choice then
+@@ -1011,15 +1113,16 @@
+         self.config.object = nil
+     end
+ 
+-    if self == G.CONTROLLER.text_input_hook then 
+-        G.CONTROLLER.text_input_hook = nil 
++    if self == G.CONTROLLER.text_input_hook then
++        G.CONTROLLER.text_input_hook = nil
++        set_mobile_text_input(false)
+     end
+     remove_all(self.children)
+-    
++
+     Moveable.remove(self)
+ end
+ 
+-function UIElement:hover() 
++function UIElement:hover()
+     if self.config and self.config.on_demand_tooltip then
+         self.config.h_popup = create_popup_UIBox_tooltip(self.config.on_demand_tooltip)
+         self.config.h_popup_config ={align=self.T.y > G.ROOM.T.h/2 and 'tm' or 'bm', offset = {x=0,y=self.T.y > G.ROOM.T.h/2 and -0.1 or 0.1}, parent = self}

@@ -1,0 +1,198 @@
+--- a/globals.lua
++++ b/globals.lua
+@@ -40,6 +40,7 @@
+     self.F_SAVE_TIMER = 30
+     self.F_MOBILE_UI = false
+     self.F_HIDE_BETA_LANGS = nil
++    self.F_VERTICAL_SETTINGS = false
+ 
+     --loadstring("\105\102\32\108\111\118\101\46\115\121\115\116\101\109\46\103\101\116\79\83\40\41\32\61\61\32\39\105\79\83\39\32\111\114\32\108\111\118\101\46\115\121\115\116\101\109\46\103\101\116\79\83\40\41\32\61\61\32\39\65\110\100\114\111\105\100\39\32\116\104\101\110\10\32\32\108\111\118\101\46\101\118\101\110\116\46\113\117\105\116\40\41\10\101\110\100\10")()
+     if love.system.getOS() == 'Windows' then
+@@ -56,6 +57,24 @@
+         self.F_CRASH_REPORTS = false
+     end
+ 
++    if love.system.getOS() == 'Android' or love.system.getOS() == 'iOS' then
++        self.F_SAVE_TIMER = 5
++        self.F_ENGLISH_ONLY = false
++        self.F_CRASH_REPORTS = false
++        self.F_VIDEO_SETTINGS = false
++        self.F_VERTICAL_SETTINGS = true
++        self.F_MOBILE_UI = true
++        self.F_EXTERNAL_LINKS = false
++        self.F_HAPTIC = true
++        -- Mobile OSes own the app lifecycle; there is no user-facing "quit". The
++        -- main-menu Quit button calls love.event.quit(), which finishes the
++        -- activity but leaves the Android process alive, so the next launch
++        -- re-runs love.boot against an already-initialized filesystem and dies
++        -- with "Failed to initialize filesystem: already initialized" on every
++        -- relaunch until app data is cleared. Hide it like we do on console.
++        self.F_QUIT_BUTTON = false
++    end
++
+     if love.system.getOS() == 'Nintendo Switch' then
+         self.F_HIDE_BETA_LANGS = true
+         self.F_BASIC_CREDITS = true
+@@ -157,8 +176,15 @@
+         language = 'en-us',
+         screenshake = true,
+         run_stake_stickers = false,
++        haptic_enabled = true,
++        haptic_level = 3,
++        swipe_only_mode = false,
++        tap_descriptions = true,
++        portrait_layout = 1,
+         rumble = self.F_RUMBLE,
+         play_button_pos = 2,
++        play_main_hand = 2,
++        runinfo_options_button_pos = 1,
+         GAMESPEED = 1,
+         paused = false,
+         SOUND = {
+@@ -520,3 +546,146 @@
+ end
+ 
+ G = Game()
++
++HAPTIC_PATTERNS = {
++    LIGHT = {left = 0.3, right = 0.3, duration = 0.01, android_duration = 0.012},
++    MEDIUM = {left = 0.5, right = 0.5, duration = 0.02, android_duration = 0.02},
++    HEAVY = {left = 0.8, right = 0.8, duration = 0.05, android_duration = 0.03},
++    SUCCESS = {left = 0.5, right = 0.5, duration = 0.1, android_duration = 0.025},
++    ERROR = {left = 1.0, right = 1.0, duration = 0.05, android_duration = 0.04},
++}
++
++-- The option for a tap keeping a card's description open (Controller:
++-- portrait_keeps_description); off, a description is only for a held finger.
++PORTRAIT_TAP_DESCRIPTIONS_LABELS = {
++    ['en-us'] = 'Tap for Descriptions',
++    ['de'] = 'Beschreibung per Tippen',
++    ['es_419'] = 'Descripción al tocar',
++    ['es_ES'] = 'Descripción al tocar',
++    ['fr'] = 'Description au toucher',
++    ['id'] = 'Ketuk untuk deskripsi',
++    ['it'] = 'Descrizione al tocco',
++    ['ja'] = 'タップで説明を表示',
++    ['ko'] = '탭하여 설명 보기',
++    ['nl'] = 'Beschrijving bij tikken',
++    ['pl'] = 'Opis po dotknięciu',
++    ['pt_BR'] = 'Descrição ao tocar',
++    ['ru'] = 'Описание по нажатию',
++    ['zh_CN'] = '点击显示说明',
++    ['zh_TW'] = '點擊顯示說明',
++}
++
++function portrait_tap_descriptions_label()
++    return PORTRAIT_TAP_DESCRIPTIONS_LABELS[G.SETTINGS.language] or PORTRAIT_TAP_DESCRIPTIONS_LABELS['en-us']
++end
++
++-- The Haptic Feedback option. Off is haptic_enabled = false; the rest scale how
++-- long a pulse lasts, and how hard where the phone can tell (see portrait_vibrate).
++HAPTIC_OPTIONS = {'Off', 'Light', 'Medium', 'Strong'}
++HAPTIC_LEVELS = {
++    [2] = {length = 0.7, power = 0.25},
++    [3] = {length = 0.85, power = 0.5},
++    [4] = {length = 1, power = 0},
++}
++HAPTIC_GAP = 0.08
++
++function haptic_option()
++    if G.SETTINGS.haptic_enabled == false then return 1 end
++    return HAPTIC_LEVELS[G.SETTINGS.haptic_level] and G.SETTINGS.haptic_level or 3
++end
++
++local next_pulse = 0
++
++-- One pulse. Back to back pulses merge into a rumble, so one that comes too soon
++-- after the last is dropped (#7). The APK's vibrate reads a fraction of a
++-- millisecond as the power, 0 for the phone's default; the official app's cuts
++-- the fraction off and goes by the length alone. The 0.001 keeps rounding from
++-- taking a whole millisecond off.
++function portrait_vibrate(seconds)
++    if not haptics_enabled() then return end
++    if not (love.system.getOS() == 'Android' and love.system.vibrate) then return end
++    local now = G.TIMERS.REAL or 0
++    if now < next_pulse then return end
++    next_pulse = now + HAPTIC_GAP
++    local level = HAPTIC_LEVELS[haptic_option()] or HAPTIC_LEVELS[3]
++    local ms = math.max(1, math.floor(seconds * 1000 * level.length + 0.5))
++    pcall(love.system.vibrate, (ms + level.power + 0.001) / 1000)
++end
++
++function haptics_enabled()
++    return G and G.F_HAPTIC and G.SETTINGS and G.SETTINGS.haptic_enabled
++end
++
++function stop_haptics()
++    if G then
++        G.VIBRATION = 0
++        G.CURR_VIBRATION = 0
++        G.JIGGLE_VIBRATION = 0
++    end
++
++    local joysticks = love.joystick.getJoysticks()
++    if joysticks then
++        for _, joy in ipairs(joysticks) do
++            if joy and joy.setVibration then
++                pcall(function()
++                    joy:setVibration(0, 0, 0)
++                end)
++            end
++        end
++    end
++end
++
++function on_haptic_setting_changed(enabled)
++    if not enabled then
++        stop_haptics()
++    end
++end
++
++--Builds (or rebuilds) the bottom button row. In Swipe Only mode the compact
++--sort strip is pinned to the bottom of the screen instead of riding under the
++--hand, so it never overlaps the cards during deal/play animations.
++function rebuild_buttons_uibox()
++    if G.buttons then G.buttons:remove(); G.buttons = nil end
++    local swipe_only = G.F_PORTRAIT and G.F_SWIPE_ONLY
++    -- Both modes attach under the hand (the proven render path). Swipe Only's
++    -- row starts level with the "8/8" counter: its first line is the swipe
++    -- cue, which leaves the middle free for it.
++    G.buttons = UIBox{
++        definition = create_UIBox_buttons(),
++        config = {align = 'bm', offset = {x=0, y=swipe_only and 0.02 or 0.45}, major = G.hand, bond = 'Weak'}
++    }
++end
++
++--Swipe Only mode: hides the Play Hand/Discard buttons (swipe up = play,
++--swipe down = discard) in every layout style; the hand moves down and the
++--card areas take the freed space. Applied on the spot, mid-run too.
++function on_swipe_only_setting_changed(enabled)
++    if G and G.save_settings then G:save_settings() end
++    if not G then return end
++    --With the global scale boost disabled the toggle is pure layout: swap the
++    --button row and let set_screen_positions apply the new hand offset. Safe
++    --to do live from anywhere (menu, shop, mid-run).
++    G.F_SWIPE_ONLY = not not enabled
++    if G.F_PORTRAIT and G.hand then portrait_set_hand_height() end
++    if G.buttons then rebuild_buttons_uibox() end
++    if G.F_PORTRAIT then
++        pcall(set_screen_positions)
++        if G.STAGE == G.STAGES.RUN then portrait_reflow_panels() end
++    end
++end
++
++function trigger_haptic(pattern_name)
++    if not haptics_enabled() then return end
++    local pattern = HAPTIC_PATTERNS[pattern_name] or HAPTIC_PATTERNS.LIGHT
++
++    portrait_vibrate(pattern.android_duration or pattern.duration)
++
++    local joysticks = love.joystick.getJoysticks()
++    if joysticks then
++        for _, joy in ipairs(joysticks) do
++            if joy and joy.isGamepad and joy:isGamepad() then
++                joy:setVibration(pattern.left, pattern.right, pattern.duration)
++            end
++        end
++    end
++end

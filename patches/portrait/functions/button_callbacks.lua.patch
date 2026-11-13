@@ -1,0 +1,691 @@
+--- a/functions/button_callbacks.lua
++++ b/functions/button_callbacks.lua
+@@ -136,16 +136,27 @@
+ ---@param e {}
+ --**e** Is the UIE that called this function
+ G.FUNCS.HUD_blind_debuff = function(e)
++  -- Refresh the plain-text mirror this node reads from. Vanilla keeps strings in
++  -- loc_debuff_lines, Steamodded keeps parsed tables; flattening here means the
++  -- node always has text instead of printing "table: 0x..." (#42).
++  local line_text = ''
++  if G.GAME.blind and G.GAME.blind.loc_debuff_lines then
++    line_text = portrait_flatten_blind_line(G.GAME.blind.loc_debuff_lines[e.config.ref_value], G.GAME.blind.loc_debuff_lines.vars)
++  end
++  if e.config.ref_table and e.config.ref_table[e.config.ref_value] ~= line_text then
++    e.config.ref_table[e.config.ref_value] = line_text
++  end
++
+   if G.GAME.blind and G.GAME.blind.loc_debuff_text and G.GAME.blind.loc_debuff_text ~= '' then
+-    if e.parent.config.minh == 0 or e.config.prev_loc ~= G.GAME.blind.loc_debuff_text then  
++    if e.parent.config.minh == 0 or e.config.prev_loc ~= G.GAME.blind.loc_debuff_text then
+       e.parent.config.minh = 0.35
+       e.config.scale = 0.36
+-      if G.GAME.blind.loc_debuff_lines[e.config.ref_value] == '' then e.config.scale = 0.0; e.parent.config.minh = 0.001 end
++      if line_text == '' then e.config.scale = 0.0; e.parent.config.minh = 0.001 end
+       e.config.prev_loc = G.GAME.blind.loc_debuff_text
+       e.UIBox:recalculate(true)
+     end
+   else
+-    if e.parent.config.minh > 0 then  
++    if e.parent.config.minh > 0 then
+       e.parent.config.minh = 0
+       e.config.scale = 0
+       e.UIBox:recalculate(true)
+@@ -153,6 +164,20 @@
+   end
+ end
+ 
++-- Portrait-only alias for the HUD debuff text nodes.
++-- SMODS replaces G.FUNCS.HUD_blind_debuff with a structural version that
++-- assumes `e` is a container with child rows and calls set_parent_child to
++-- mutate them; when applied to our portrait text nodes (which have no
++-- children) it adds malformed children whose T field never gets initialized,
++-- so set_wh crashes with "attempt to index field 'T' (a nil value)".
++--
++-- By referencing this aliased name from the text nodes instead, the SMODS
++-- override never touches them. Lua resolves G.FUNCS[name] by table lookup at
++-- call time, so SMODS reassigning G.FUNCS.HUD_blind_debuff doesn't affect the
++-- function value held in G.FUNCS.portrait_HUD_blind_debuff — which still
++-- points to the vanilla portrait behavior above.
++G.FUNCS.portrait_HUD_blind_debuff = G.FUNCS.HUD_blind_debuff
++
+ --Adds the prefix for the debuff text for the wheel blind
+ --
+ ---@param e {}
+@@ -202,7 +227,7 @@
+         G.SAVED_GAME = get_compressed(G.SETTINGS.profile..'/'..'save.jkr')
+         if G.SAVED_GAME ~= nil then G.SAVED_GAME = STR_UNPACK(G.SAVED_GAME) end
+       end
+-      if not G.SAVED_GAME.VERSION or G.SAVED_GAME.VERSION < '0.9.2' then
++      if not G.SAVED_GAME.VERSION or version_lt(G.SAVED_GAME.VERSION, '0.9.2') then
+         e.config.colour = G.C.UI.BACKGROUND_INACTIVE
+         e.config.button = nil
+       else
+@@ -630,19 +655,25 @@
+     for i = #G.your_collection[j].cards,1, -1 do
+       local c = G.your_collection[j]:remove_card(G.your_collection[j].cards[i])
+       c:remove()
+-      c = nil
++    end
++  end
++
++  local row_sizes = G.F_PORTRAIT and PORTRAIT_CONFIG.row_sizes or PORTRAIT_CONFIG.row_sizes_landscape
++  local page = args.cycle_config.current_option
++  local card_index = 1 + (page - 1) * 11
++
++  for j = 1, #G.your_collection do
++    for i = 1, row_sizes[j] do
++      local center = G.P_CENTER_POOLS["Tarot"][card_index]
++      if center then 
++        local card = Card(G.your_collection[j].T.x + G.your_collection[j].T.w/2, G.your_collection[j].T.y, G.CARD_W, G.CARD_H, nil, center)
++        card:start_materialize(nil, i>1 or j>1)
++        G.your_collection[j]:emplace(card)
++      end
++      card_index = card_index + 1
+     end
+   end
+   
+-  for j = 1, #G.your_collection do
+-    for i = 1, 4+j do
+-      local center = G.P_CENTER_POOLS["Tarot"][i+(j-1)*(5) + (11*(args.cycle_config.current_option - 1))]
+-      if not center then break end
+-      local card = Card(G.your_collection[j].T.x + G.your_collection[j].T.w/2, G.your_collection[j].T.y, G.CARD_W, G.CARD_H, G.P_CARDS.empty, center)
+-      card:start_materialize(nil, i>1 or j>1)
+-      G.your_collection[j]:emplace(card)
+-    end
+-  end
+   INIT_COLLECTION_CARD_ALERTS()
+ end
+ 
+@@ -826,11 +857,132 @@
+ G.FUNCS.change_play_discard_position = function(args)
+   G.SETTINGS.play_button_pos = args.to_key
+   if G.buttons then
+-    G.buttons:remove()
+-      G.buttons = UIBox{
+-          definition = create_UIBox_buttons(),
+-          config = {align="bm", offset = {x=0,y=0.3},major = G.hand, bond = 'Weak'}
+-      }
++    rebuild_buttons_uibox()
++  end
++end
++
++--Portrait layout style (Classic / One-Thumb / Focus, see portrait_layout).
++--Applied on the spot: the HUD, blind panel, button bar and card areas are
++--rebuilt in the new style (portrait_rebuild_HUD), mid-run too.
++G.FUNCS.change_haptic_level = function(args)
++  local on = args.to_key > 1
++  G.SETTINGS.haptic_enabled = on
++  if on then G.SETTINGS.haptic_level = args.to_key end
++  on_haptic_setting_changed(on)
++  G:save_settings()
++  trigger_haptic('MEDIUM')
++end
++
++G.FUNCS.change_portrait_layout = function(args)
++  G.SETTINGS.portrait_layout = args.to_key
++  G:save_settings()
++  if G.buttons then rebuild_buttons_uibox() end
++  if G.F_PORTRAIT then
++    portrait_rebuild_HUD()
++    pcall(set_screen_positions)
++    portrait_reflow_panels()
++  end
++end
++
++--Frame rate: love.run works the cap out again on the next frame.
++G.FUNCS.change_portrait_fps = function(args)
++  G.SETTINGS.portrait_fps = args.to_key
++  G.FPS_CAP = nil
++  G:save_settings()
++end
++
++--Focus layout's single sort button: sorts by what it shows, then offers the
++--other order.
++PORTRAIT_SORT_STATE = {next = 'rank', label = ''}
++G.FUNCS.portrait_sort_toggle = function(e)
++  if PORTRAIT_SORT_STATE.next == 'suit' then
++    G.FUNCS.sort_hand_suit(e)
++    PORTRAIT_SORT_STATE.next = 'rank'
++  else
++    G.FUNCS.sort_hand_value(e)
++    PORTRAIT_SORT_STATE.next = 'suit'
++  end
++  PORTRAIT_SORT_STATE.label = PORTRAIT_SORT_STATE.next == 'suit' and localize('k_suit') or localize('k_rank')
++end
++
++--Updates play areas position (Left/Right Hand mode)
++--
++---@param args {cycle_config: table, to_key: value}
++--**cycle_config** Is the config table from the original option cycle UIE
++--**to_key** The new screenmode setting key
++G.FUNCS.change_play_main_hand = function(args)
++  G.SETTINGS.play_main_hand = args.to_key
++  -- One-Thumb puts Play on the side of the hand the phone is held in.
++  if G.buttons and portrait_layout() == 'one_thumb' then rebuild_buttons_uibox() end
++  
++  -- 1. Updates card areas physical coordinates
++  set_screen_positions()
++
++  -- 2. Update the LIVE alignment properties of the first tag
++  if G.HUD_tags and G.HUD_tags[1] and G.F_PORTRAIT then
++    -- Modify the actual active alignment type ('bl' or 'br')
++    G.HUD_tags[1].alignment.type = (G.SETTINGS.play_main_hand == 1) and 'bl' or 'br'
++    G.HUD_tags[1].alignment.offset.x = (G.SETTINGS.play_main_hand == 1) and -0.2  or 0.2
++  end
++
++  -- 3. Recalculate specific UI elements safely
++  if G.STAGE == G.STAGES.RUN then
++    if G.HUD then G.HUD:recalculate() end
++    if G.buttons then G.buttons:recalculate() end
++    
++    -- Target ONLY Deck and Consumables UI boxes to prevent ghost menus
++    for _, uibox in pairs(G.I.UIBOX or {}) do
++      if uibox.config and (uibox.config.major == G.deck or uibox.config.major == G.consumeables) then
++        uibox:recalculate()
++      end
++    end
++    
++    -- Force tags to update their visual coordinates immediately
++    if G.HUD_tags then
++      for i = 1, #G.HUD_tags do
++        G.HUD_tags[i]:recalculate()
++      end
++    end
++  end
++end
++
++--Changes the position and order of Run Info / Options buttons
++--
++---@param args {cycle_config: table, to_key: value}
++--**cycle_config** Is the config table from the original option cycle UIE
++--**to_key** The new position key
++G.FUNCS.change_runinfo_options_position = function(args)
++  G.SETTINGS.runinfo_options_button_pos = args.to_key
++  local pos = args.to_key
++
++  -- 1. Only proceed if the main HUD exists (i.e. we are in a run)
++  if G.HUD then
++    local button_area = G.HUD:get_UIE_by_ID('button_area')
++    local run_info = G.HUD:get_UIE_by_ID('run_info_container')
++    local options = G.HUD:get_UIE_by_ID('options_container')
++
++    if button_area and run_info and options then
++      
++      -- 2. Update the horizontal alignment of the entire button area
++      local new_align = "bm"
++      if pos >= 3 and pos <= 4 then new_align = "bl" end
++      if pos >= 5 then new_align = "br" end
++      button_area.config.align = new_align
++
++      -- 3. Reorder the children nodes based on the setting (Odd = Run Info first, Even = Options first)
++      if pos % 2 == 0 then
++        -- Options first
++        button_area.children[1] = options
++        button_area.children[2] = run_info
++      else
++        -- Run Info first
++        button_area.children[1] = run_info
++        button_area.children[2] = options
++      end
++
++      -- 4. Tell the main HUD to update the layout of its newly ordered children
++      G.HUD:recalculate()
++    end
+   end
+ end
+ 
+@@ -910,7 +1062,12 @@
+ 
+   local OSkeyboard_e = e.parent.parent.parent
+   if G.CONTROLLER.text_input_hook == e and G.CONTROLLER.HID.controller then
+-    if not OSkeyboard_e.children.controller_keyboard then 
++    -- The line above is what Steamodded's mobile patch rewrites to add touch
++    -- devices, so it stays byte-identical to vanilla (see #41). The guard lives
++    -- here instead: on a phone the device keyboard handles text, and drawing
++    -- Balatro's own behind the menu on top of it is what made both appear at
++    -- once with the menu still clickable through them (#44).
++    if not OSkeyboard_e.children.controller_keyboard and not uses_system_keyboard() then 
+       OSkeyboard_e.children.controller_keyboard = UIBox{
+         definition = create_keyboard_input{backspace_key = true, return_key = true, space_key = false},
+         config = {
+@@ -953,9 +1110,29 @@
+ G.FUNCS.select_text_input = function(e)
+   G.CONTROLLER.text_input_hook = e.children[1].children[1]
+ 
++  -- The device keyboard opens with an empty buffer of its own, so its backspace
++  -- never reaches text the field already held (#44). Arm the field so the first
++  -- character typed replaces what is there, the way selecting the text does on a
++  -- desktop. Backspace or an arrow key cancels it and editing carries on as normal.
++  if uses_system_keyboard() and G.CONTROLLER.text_input_hook and G.CONTROLLER.text_input_hook.config then
++    G.CONTROLLER.text_input_hook.config.ref_table.portrait_replace_on_type = true
++  end
++
+   --Start by setting the cursor position to the correct location
+   TRANSPOSE_TEXT_INPUT(0)
+   e.UIBox:recalculate(true)
++  set_mobile_text_input(true)
++  G.E_MANAGER:add_event(Event({
++    trigger = 'after',
++    delay = 0.05,
++    blockable = false,
++    func = function()
++      if G and G.CONTROLLER and G.CONTROLLER.text_input_hook then
++        set_mobile_text_input(true)
++      end
++      return true
++    end
++  }))
+ end
+ 
+ --Handles all key inputs for the hooked text input.
+@@ -1003,6 +1180,23 @@
+   --Start by setting the cursor position to the correct location
+   TRANSPOSE_TEXT_INPUT(0)
+ 
++  -- Armed by select_text_input on mobile: the first real character wipes what the
++  -- field already held, since the device keyboard's own backspace cannot (#44).
++  if hook_config.portrait_replace_on_type then
++    if args.key == 'BACKSPACE' or args.key == 'DELETE' or args.key == 'LEFT'
++      or args.key == 'RIGHT' or args.key == 'RETURN' then
++      hook_config.portrait_replace_on_type = nil
++    elseif string.len(args.key) == 1 then
++      hook_config.portrait_replace_on_type = nil
++      local guard = 0
++      while string.len(text.ref_table[text.ref_value]) > 0 and guard < 64 do
++        MODIFY_TEXT_INPUT{letter = '', text_table = text, pos = text.current_position, delete = true}
++        TRANSPOSE_TEXT_INPUT(-1)
++        guard = guard + 1
++      end
++    end
++  end
++
+   if string.len(text.ref_table[text.ref_value]) > 0 and args.key == 'BACKSPACE' then --If not at start, remove preceding letter
+     MODIFY_TEXT_INPUT{
+       letter = '',
+@@ -1028,6 +1222,7 @@
+     hook_config.colour[3] = G.C.WHITE[3]
+     ease_colour(hook_config.colour, temp_colour)
+     G.CONTROLLER.text_input_hook = nil
++    set_mobile_text_input(false)
+   elseif args.key == 'LEFT' then --Move cursor position to the left
+     TRANSPOSE_TEXT_INPUT(-1)
+   elseif args.key == 'RIGHT' then --Move cursor position to the right
+@@ -1179,7 +1374,12 @@
+     vsync = G.SETTINGS.WINDOW.vsync,
+     resizable = true,
+     display = G.SETTINGS.WINDOW.selected_display,
+-    highdpi = (love.system.getOS() == 'OS X')
++    -- This runs once at boot, and love.window.updateMode rebuilds the window
++    -- with whatever it is handed, so leaving iOS out here would undo the
++    -- highdpi flag conf.lua asked for. Steamodded rewrites the parenthesised
++    -- test on this line for mobile, so it is kept byte identical and iOS is
++    -- added after it instead (#45).
++    highdpi = (love.system.getOS() == 'OS X') or (love.system.getOS() == 'iOS')
+     })
+   G.SETTINGS.QUEUED_CHANGE = {}
+   if _initial ~= true then
+@@ -1215,7 +1415,26 @@
+   if G.GAME.viewed_back.name ~= e.config.id then 
+     --removes the UI from the previously selected back and adds the new one
+ 
++    local mobile_ui = PORTRAIT_CONFIG and PORTRAIT_CONFIG.mobile_ui or {}
++    local setup_back_desc_scale = G.F_PORTRAIT and (mobile_ui.run_setup_back_desc_scale or 0.72) or nil
++    local setup_back_min_dims = G.F_PORTRAIT and (mobile_ui.run_setup_back_min_dims or 0.76) or nil
++
+     e.config.object:remove() 
++    e.config.object = UIBox{
++      definition = G.GAME.viewed_back:generate_UI(nil, setup_back_desc_scale, setup_back_min_dims),
++      config = {offset = {x=0,y=0}, align = 'cm', parent = e}
++    }
++    e.config.id = G.GAME.viewed_back.name
++  end
++end
++
++--Collections deck viewer variant of RUN_SETUP_check_back: regenerates at the
++--default scale every time, so the description keeps the size of the first
++--render across deck switches (#39). The run setup screen stays on the compact
++--portrait scale above.
++G.FUNCS.COLLECTION_check_back = function(e)
++  if G.GAME.viewed_back.name ~= e.config.id then
++    e.config.object:remove()
+     e.config.object = UIBox{
+       definition = G.GAME.viewed_back:generate_UI(),
+       config = {offset = {x=0,y=0}, align = 'cm', parent = e}
+@@ -1311,6 +1530,7 @@
+       config = {offset = {x=0,y=0}, parent = tab_contents, type = 'cm'}
+     }
+   tab_contents.UIBox:recalculate()
++  if G.F_PORTRAIT and tab_contents.UIBox == G.OVERLAY_MENU then portrait_fit_overlay(G.OVERLAY_MENU) end
+ end
+ 
+ --||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+@@ -1351,6 +1571,7 @@
+ 
+   --Set the offset and align. The menu overlay can be initially offset in the y direction and this will ensure it slides to middle
+   G.OVERLAY_MENU.alignment.offset.y = 0
++  if G.F_PORTRAIT then portrait_fit_overlay(G.OVERLAY_MENU) end
+   G.ROOM.jiggle = G.ROOM.jiggle + 1
+   G.OVERLAY_MENU:align_to_major()
+ end
+@@ -1818,7 +2039,28 @@
+     G.CLIPBOARD = G.GAME.pseudorandom.seed
+   else
+     love.system.setClipboardText(G.GAME.pseudorandom.seed)
+-  end 
++  end
++end
++
++G.FUNCS.open_portrait_diagnostics = function(e)
++  G.FUNCS.overlay_menu{definition = G.UIDEF.portrait_diagnostics()}
++end
++
++G.FUNCS.open_portrait_support = function(e)
++  love.system.openURL("https://www.patreon.com/loreanxavier")
++end
++
++G.FUNCS.copy_portrait_diagnostics = function(e)
++  local report = portrait_diagnostics_report()
++  if G.F_LOCAL_CLIPBOARD then
++    G.CLIPBOARD = report
++  else
++    love.system.setClipboardText(report)
++  end
++  attention_text({
++    scale = 0.7, text = 'Copied!', hold = 1.2, align = 'cm',
++    major = G.ROOM_ATTACH, offset = {x = 0, y = 0}
++  })
+ end
+ 
+ G.FUNCS.start_setup_run = function(e)
+@@ -1854,18 +2096,32 @@
+     e.config.object:remove()
+     e.config.object = nil
+   elseif not e.config.object and G.run_setup_seed then
++    -- Portrait: this row was built for a mouse. The field, the paste button and
++    -- the note beside them were too small to hit or read on a phone (#44).
++    local seed_note_scale = G.F_PORTRAIT and 0.34 or 0.26
++    local seed_field_w = G.F_PORTRAIT and 3.1 or 2.5
++    local seed_field_h = G.F_PORTRAIT and 1.0 or 0.7
++    local seed_text_scale = G.F_PORTRAIT and 0.5 or 0.4
++    local paste_w = G.F_PORTRAIT and 1.7 or 1
++    local paste_h = G.F_PORTRAIT and 1.0 or 0.6
++    local paste_scale = G.F_PORTRAIT and 0.4 or 0.3
++    -- The columns either side of the field are desktop breathing room; on a phone
++    -- they push the row past the panel and cut the note off at the screen edge.
++    local seed_note_w = G.F_PORTRAIT and 2.2 or 2.5
++    local seed_tail_w = G.F_PORTRAIT and 0.2 or 2.5
++
+     e.config.object = UIBox{
+       definition = {n=G.UIT.ROOT, config={align = "cm", colour = G.C.CLEAR}, nodes={
+-        {n=G.UIT.C, config={align = "cm", minw = 2.5, padding = 0.05}, nodes={
+-          simple_text_container('ml_disabled_seed',{colour = G.C.UI.TEXT_LIGHT, scale = 0.26, shadow = true}),
++        {n=G.UIT.C, config={align = "cm", minw = seed_note_w, padding = 0.05}, nodes={
++          simple_text_container('ml_disabled_seed',{colour = G.C.UI.TEXT_LIGHT, scale = seed_note_scale, shadow = true}),
+         }},
+         {n=G.UIT.C, config={align = "cm", minw = 0.1}, nodes={
+-          create_text_input({max_length = 8, all_caps = true, ref_table = G, ref_value = 'setup_seed', prompt_text = localize('k_enter_seed')}),
++          create_text_input({max_length = 8, all_caps = true, w = seed_field_w, h = seed_field_h, text_scale = seed_text_scale, ref_table = G, ref_value = 'setup_seed', prompt_text = localize('k_enter_seed')}),
+           {n=G.UIT.C, config={align = "cm", minw = 0.1}, nodes={}},
+-          UIBox_button({label = localize('ml_paste_seed'),minw = 1, minh = 0.6, button = 'paste_seed', colour = G.C.BLUE, scale = 0.3, col = true})
++          UIBox_button({label = localize('ml_paste_seed'),minw = paste_w, minh = paste_h, button = 'paste_seed', colour = G.C.BLUE, scale = paste_scale, col = true})
+         }},
+ 
+-        {n=G.UIT.C, config={align = "cm", minw = 2.5}, nodes={
++        {n=G.UIT.C, config={align = "cm", minw = seed_tail_w}, nodes={
+         }},
+       }},
+       config = {offset = {x=0,y=0}, parent = e, type = 'cm'}
+@@ -2023,6 +2279,12 @@
+       else
+         _F.intensity = 0
+       end
++      -- An overflowed score (naneinf) made this infinite, then NaN, and the
++      -- flame shader drew solid blocks over the counters. Cap it where a
++      -- score near the float limit (1e308) would put it, and catch NaN.
++      if not (_F.intensity <= 450) then _F.intensity = 450 end
++      if not (_F.real_intensity <= 450) then _F.real_intensity = 450 end
++      if _F.intensity_vel ~= _F.intensity_vel then _F.intensity_vel = 0 end
+ 
+       _F.timer = _F.timer + G.real_dt*(1 + _F.intensity*0.2)
+       if _F.intensity_vel < 0 then _F.intensity_vel = _F.intensity_vel*(1 - 10*G.real_dt) end
+@@ -2142,11 +2404,22 @@
+ 
+   G.FUNCS.show_infotip = function(e)
+     if e.config.ref_table then 
++      local info_align, info_offset = 'cl', {x=-0.03,y=0}
++      if get_portrait_side_tooltip_config then
++        info_align, info_offset = get_portrait_side_tooltip_config(e)
++      end
+       e.children.info = UIBox{
+         definition = {n=G.UIT.ROOT, config = {align = 'cm', colour = G.C.CLEAR, padding = 0.02}, nodes=e.config.ref_table},
+-        config = {offset = {x=-0.03,y=0}, align = 'cl', parent = e}
++        config = {offset = info_offset, align = info_align, parent = e, can_collide = false}
+       }
+       e.children.info:align_to_major()
++      e.children.info.states.collide.can = false
++      e.children.info.states.drag.can = false
++      if fit_portrait_side_tooltip then
++        fit_portrait_side_tooltip(e.children.info, e)
++      elseif prepare_portrait_popup_fit then
++        prepare_portrait_popup_fit(e.children.info)
++      end
+       e.config.ref_table = nil
+     end
+   end
+@@ -2339,6 +2612,7 @@
+     G.SETTINGS.COMP.submission_name = true
+     if G.MAIN_MENU_UI then G.MAIN_MENU_UI:remove() end
+     if G.PROFILE_BUTTON then G.PROFILE_BUTTON:remove() end
++    if G.LANGUAGE_BUTTON then G.LANGUAGE_BUTTON:remove() end
+     set_main_menu_UI()
+     G:save_progress()
+     G.FILE_HANDLER.force = true
+@@ -2348,6 +2622,7 @@
+     G.SETTINGS.COMP.name = ''
+     if G.MAIN_MENU_UI then G.MAIN_MENU_UI:remove() end
+     if G.PROFILE_BUTTON then G.PROFILE_BUTTON:remove() end
++    if G.LANGUAGE_BUTTON then G.LANGUAGE_BUTTON:remove() end
+     set_main_menu_UI()
+   end
+ 
+@@ -2629,10 +2904,14 @@
+   end
+ 
+   G.FUNCS.blind_choice_handler = function(e)
+-    if not e.config.ref_table.run_info and G.blind_select and G.blind_select.VT.y < 10 and e.config.id and G.blind_select_opts[string.lower(e.config.id)] then 
+-      if e.UIBox.role.xy_bond ~= 'Weak' then e.UIBox:set_role({xy_bond = 'Weak'}) end
++    -- Dynamic Y-limit to account for Portrait mode's lower UI placement
++    local y_limit = G.F_PORTRAIT and 50 or 10
++
++    if not e.config.ref_table.run_info and G.blind_select and G.blind_select.VT.y < y_limit and e.config.id and G.blind_select_opts[string.lower(e.config.id)] then
++      -- Portrait: skip xy_bond change to keep blind cards locked in row layout (prevents fly-away)
++      if not G.F_PORTRAIT and e.UIBox.role.xy_bond ~= 'Weak' then e.UIBox:set_role({xy_bond = 'Weak'}) end
+       if (e.config.ref_table.deck ~= 'on' and e.config.id == G.GAME.blind_on_deck) or
+-         (e.config.ref_table.deck ~= 'off' and e.config.id ~= G.GAME.blind_on_deck) then
++        (e.config.ref_table.deck ~= 'off' and e.config.id ~= G.GAME.blind_on_deck) then
+ 
+           local _blind_choice = G.blind_select_opts[string.lower(e.config.id)]
+           local _top_button = e.UIBox:get_UIE_by_ID('select_blind_button')
+@@ -2649,7 +2928,11 @@
+             _border.parent.config.outline_colour = G.C.UI.TRANSPARENT_DARK
+             _border.config.outline_colour = _border.config.outline and _border.config.outline_colour or get_blind_main_colour(e.config.id)
+             _border.config.outline = 1.5
+-            _blind_choice.alignment.offset.y = -0.9
++            
++            -- Elevates the active blind visually (portrait: no y-shift to prevent row drift)
++            local y_offset_active = G.F_PORTRAIT and 0 or -0.9
++            if not G.F_PORTRAIT then _blind_choice.alignment.offset.y = y_offset_active end
++            
+             if _tag and _tag_container then 
+               _tag_container.children[2].config.draw_after = false
+               _tag_container.children[2].config.colour = G.C.BLACK
+@@ -2678,16 +2961,23 @@
+             _border.parent.config.outline_colour = nil
+             _border.config.outline_colour = nil
+             _border.config.outline = nil
+-            _blind_choice.alignment.offset.y = -0.2
++            
++            -- Pushes inactive blinds down visually (portrait: no y-shift to prevent row drift)
++            local y_offset_inactive = G.F_PORTRAIT and 0 or -0.2
++            _blind_choice.alignment.offset.y = y_offset_inactive
++            
+             if _tag and _tag_container then 
+               if G.GAME.round_resets.blind_states[e.config.id] == 'Skipped' or
+-                 G.GAME.round_resets.blind_states[e.config.id] == 'Defeated' then
+-                _tag_container.children[2]:set_role({xy_bond = 'Weak'})
+-                _tag_container.children[2]:align(0, 10)
+-                _tag_container.children[1]:set_role({xy_bond = 'Weak'})
+-                _tag_container.children[1]:align(0, 10)
++                G.GAME.round_resets.blind_states[e.config.id] == 'Defeated' then
++                if not _tag_container.config.finished_blind_offset_applied then
++                  _tag_container.children[2]:set_role({xy_bond = 'Weak'})
++                  _tag_container.children[2]:align(0, 10)
++                  _tag_container.children[1]:set_role({xy_bond = 'Weak'})
++                  _tag_container.children[1]:align(0, 10)
++                  _tag_container.config.finished_blind_offset_applied = true
++                end
+               end
+-              if G.GAME.round_resets.blind_states[e.config.id] == 'Skipped' then
++              if G.GAME.round_resets.blind_states[e.config.id] == 'Skipped' and not _blind_choice.children.alert then
+                 _blind_choice.children.alert = UIBox{
+                   definition = create_UIBox_card_alert({text_rot = -0.35, no_bg = true,text = localize('k_skipped_cap'), bump_amount = 1, scale = 0.9, maxw = 3.4}),
+                   config = {
+@@ -2720,9 +3010,11 @@
+     if (e.states.hover.is or e.parent.states.hover.is) and (e.created_on_pause == G.SETTINGS.paused) and
+       not e.parent.children.alert then
+         local _sprite = e.config.ref_table:get_uibox_table()
++        local popup_align = 'tm'
++        local popup_offset = {x = 0, y = G.F_PORTRAIT and -0.45 or -0.1}
+         e.parent.children.alert = UIBox{
+           definition = G.UIDEF.card_h_popup(_sprite),
+-          config = {align="tm", offset = {x = 0, y = -0.1},
++          config = {align=popup_align, offset = popup_offset,
+           major = e.parent,
+           instance_type = 'POPUP'},
+       }
+@@ -2730,6 +3022,7 @@
+       play_sound('paper1', math.random()*0.1 + 0.55, 0.42)
+       play_sound('tarot2', math.random()*0.1 + 0.55, 0.09)
+       e.parent.children.alert.states.collide.can = false
++      e.parent.children.alert.states.drag.can = false
+     elseif e.parent.children.alert and
+     ((not e.states.collide.is and not e.parent.states.collide.is) or (e.created_on_pause ~= G.SETTINGS.paused)) then
+       e.parent.children.alert:remove()
+@@ -2807,35 +3100,65 @@
+         trigger = 'immediate',
+         func = function()
+           play_sound('other1')
+-          G.blind_select_opts.boss:set_role({xy_bond = 'Weak'})
+-          G.blind_select_opts.boss.alignment.offset.y = 20
++          -- Portrait: skip slide-out animation to prevent layout drift
++          if not G.F_PORTRAIT then
++            G.blind_select_opts.boss:set_role({xy_bond = 'Weak'})
++            G.blind_select_opts.boss.alignment.offset.y = 20
++          end
+           return true
+         end
+       }))
+     G.E_MANAGER:add_event(Event({
+       trigger = 'after',
+-      delay = 0.3,
++      delay = G.F_PORTRAIT and 0.05 or 0.3,
+       func = (function()
+         local par = G.blind_select_opts.boss.parent
+         G.GAME.round_resets.blind_choices.Boss = get_new_boss()
+ 
++        -- Remember the OLD boss's actual screen position before removing it,
++        -- so the new UIBox can start from the same spot (and not snap to T={x,0,0,0}).
++        local prev_T = G.blind_select_opts.boss and G.blind_select_opts.boss.T
++        local init_T = prev_T
++            and {prev_T.x, prev_T.y, prev_T.w, prev_T.h}
++            or {par.T.x, 0, 0, 0}
++
+         G.blind_select_opts.boss:remove()
++        -- Mirror compact_blind_choice's wrapper instead of UIBox_dyn_container.
++        -- UIBox_dyn_container hardcodes minh=30 and landscape paddings, which
++        -- forces the rerolled boss to balloon vertically in portrait mode
++        -- ("tail extending and sliding upward"). The triple-row wrapper below
++        -- uses portrait-aware paddings and has no minh constraint, matching
++        -- the layout the boss had on first render.
++        local mobile_blind = (PORTRAIT_CONFIG.mobile_ui and PORTRAIT_CONFIG.mobile_ui.blind_choice) or {}
++        local boss_main_colour = get_blind_main_colour('Boss')
++        local boss_bg_colour = mix_colours(G.C.BLACK, boss_main_colour, 0.8)
+         G.blind_select_opts.boss = UIBox{
+-          T = {par.T.x, 0, 0, 0, },
++          T = init_T,
+           definition =
+             {n=G.UIT.ROOT, config={align = "cm", colour = G.C.CLEAR}, nodes={
+-              UIBox_dyn_container({create_UIBox_blind_choice('Boss')},false,get_blind_main_colour('Boss'), mix_colours(G.C.BLACK, get_blind_main_colour('Boss'), 0.8))
++              {n=G.UIT.R, config = {align = "cm", padding = G.F_PORTRAIT and (mobile_blind.wrapper_pad or 0.012) or 0.03, colour = G.C.UI.TRANSPARENT_DARK, r=0.1}, nodes={
++                {n=G.UIT.R, config = {align = "cm", padding = G.F_PORTRAIT and (mobile_blind.wrapper_inner_pad or 0.018) or 0.04, colour = boss_main_colour, r=0.1}, nodes={
++                  {n=G.UIT.R, config = {align = "tm", colour = boss_bg_colour, r=0.1, padding = G.F_PORTRAIT and (mobile_blind.wrapper_inner_pad or 0.018) or 0.04}, nodes={
++                    create_UIBox_blind_choice('Boss')
++                  }}
++                }}
++              }}
+             }},
+           config = {align="bmi",
+-                    offset = {x=0,y=G.ROOM.T.y + 9},
++                    offset = {x=0,y=G.F_PORTRAIT and 0 or (G.ROOM.T.y + 9)},
+                     major = par,
+-                    xy_bond = 'Weak'
++                    xy_bond = G.F_PORTRAIT and 'Strong' or 'Weak'
+                   }
+         }
+         par.config.object = G.blind_select_opts.boss
+         par.config.object:recalculate()
+         G.blind_select_opts.boss.parent = par
+         G.blind_select_opts.boss.alignment.offset.y = 0
++        if G.F_PORTRAIT then
++            -- Force-snap to the row slot so it doesn't render at its initial T.
++            G.blind_select_opts.boss:align_to_major()
++            G.blind_select_opts.boss:hard_set_VT()
++        end
+         
+         G.E_MANAGER:add_event(Event({blocking = false, trigger = 'after', delay = 0.5,func = function()
+             G.CONTROLLER.locks.boss_reroll = nil
+@@ -3201,3 +3524,43 @@
+     end
+   }))
+ end
++
++--Portrait: visibility + juice driver for the floating hand-preview chip above
++--the hand. Runs every frame via the UIBox root's func; shows the chip only
++--while the player is actively selecting cards, and bounces it (juice_up +
++--text pulse) whenever it appears or the detected poker hand changes.
++G.FUNCS.hand_preview_visibility = function(e)
++    local box = e.UIBox
++    if not box then return end
++    local show = G.STATE == G.STATES.SELECTING_HAND
++        and G.hand and #G.hand.highlighted > 0
++        and not G.OVERLAY_MENU and not G.TAROT_INTERRUPT
++        and not G.SETTINGS.paused
++        -- One-Thumb's score line and Focus's HUD show the hand already; a
++        -- second copy above the cards only repeated it.
++        and portrait_layout() == 'classic'
++    local was_visible = box.states.visible
++    box.states.visible = not not show
++    if not show then
++        box.hand_preview_last = nil
++        return
++    end
++    -- The pill grows with the hand's name ("Старшая карта"), but a box keeps
++    -- the place it was aligned to at its old width and ran off the right edge;
++    -- centred over the hand again.
++    if box.hand_preview_w ~= box.T.w then
++        box.hand_preview_w = box.T.w
++        box.alignment.prev_type = nil
++    end
++    local hn = G.GAME.current_round.current_hand.handname
++    if was_visible and box.hand_preview_last == hn then return end
++    box.hand_preview_last = hn
++    local pill = box:get_UIE_by_ID('hand_preview_pill')
++    if pill then pill:juice_up(0.06, 0.03) end
++    for _, id in ipairs({'hand_preview_name', 'hand_preview_chips', 'hand_preview_mult'}) do
++        local uie = box:get_UIE_by_ID(id)
++        if uie and uie.config.object and uie.config.object.pulse then
++            uie.config.object:pulse(0.4)
++        end
++    end
++end

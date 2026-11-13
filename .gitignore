@@ -1,0 +1,47 @@
+# Build output
+*.apk
+*.ipa
+*.love
+*.love.part
+*.keystore
+
+# Python
+__pycache__/
+*.pyc
+
+# Build artifacts and downloaded tools
+balatro-mobile-maker/
+*.tmp
+
+# Build cache / saved config
+.build_cache.json
+.buildconfig.json
+
+# The game's code and files: made locally from your Balatro copy and
+# patches/portrait/ (tools/patches.py), never committed
+game_original_files/
+/src/*
+!/src/portrait_config.lua
+!/src/portrait_layouts.lua
+!/src/smali/
+
+# Editor / tools
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+logcat*.txt
+*.log
+
+# Windows
+*.dll
+*.exe
+*.pdb
+*.ppdb
+
+# Headless test runner (tools/headless): engine copy, staging, output
+.headless/
+
+# Release staging (tools/make_release.py)
+dist/

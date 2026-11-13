@@ -1,24 +1,63 @@
 # Balatro Portrait
 
-Custom portrait-mode development repository for Balatro.
+Custom portrait-mode development repository for Balatro, based on the upstream **Balatro Portrait Mobile v1.0.7** source.
 
-## Upstream
+## Repository baseline
 
-This project is based on [Balatro Portrait Mobile](https://github.com/LoreanXavier/balatro-portrait-mobile), which provides the portrait-mode build system and mobile patches. Original project code and notices are to be preserved with attribution and under their applicable licenses.
+- Upstream baseline: [LoreanXavier/balatro-portrait-mobile v1.0.7](https://github.com/LoreanXavier/balatro-portrait-mobile/releases/tag/v1.0.7)
+- Primary validation device: iPhone 11
+- Default branch: `main` only
+- The upstream build system, portrait patches, source configuration, tests, tooling, documentation and Readabletro assets are imported.
+- Upstream CI workflows are intentionally not copied; this repository will add only the checks needed for this fork.
+- Fork development version: `1.0.9`.
 
-## Current baseline
+## Uploaded iOS game package compatibility
 
-- Target device: iPhone 11 (primary UI validation target)
-- Uploaded iOS package: `Balatro-plus-v1-4-9.ipa`
-- iOS bundle version: `1.0.17`
-- Internal game version: `1.0.1o`
-- Internal build target: `PROD_mobile`
+The supplied `Balatro-plus-v1-4-9.ipa` was inspected locally:
 
-The uploaded IPA is being checked against the upstream mobile patch set before it is used as a build source. Do not redistribute game binaries or proprietary game assets in this repository.
+| Field | Value |
+|---|---|
+| iOS app version | `1.0.17` |
+| Bundle identifier | `com.playstack.balatroarcade` |
+| Internal Balatro version | `1.0.1o` |
+| Internal build target | `PROD_mobile` |
+| Source layout | Lua files under `Payload/Balatro.app/game/` |
+
+The uploaded IPA is a Balatro+ source variant. It has the same `1.0.1o` / `PROD_mobile` markers, but its collaboration credits and mobile feature flags differ from the upstream vanilla source. The patcher now detects this variant, skips only the UI hunks that are already present, and rebases the mobile feature flags without dropping the newer collaboration entries.
+
+**Local integration verification completed:**
+- All 27 mobile patch files apply to the supplied IPA: 33 Lua source files, zero failed or fuzzed hunks.
+- The build pipeline extracts resources and localization from `Payload/<app>.app/game/`.
+- `Game.love` builds successfully with 310 files (approximately 96 MB).
+- All 49 Lua files in the built archive pass syntax parsing.
+- An unsigned portrait IPA was built using the pinned vanilla LÖVE iOS shell.
+
+The generated IPA uses bundle ID `org.htf65jud.balatro`, while the uploaded source IPA uses `com.playstack.balatroarcade`. **It installs as a separate app and does not overwrite the source Balatro+ app.** It must be re-signed with Sideloadly or AltStore. Actual installation and gameplay on an iPhone remain to be tested. The IPA and proprietary game files are not committed to this repository.
+
+For a locally owned IPA, the build command is:
+
+```bash
+python build.py --balatro /path/to/Balatro.ipa --ios --ios-vanilla --readabletro --keep-crt --skip-apk --force
+```
+
+## UI implementation in v1.0.9
+
+- Play and Discard panels are narrower and shorter, with centered content.
+- The Sort panel is wider, with wider sort pills.
+- The action row is moved slightly lower.
+- The Classic top HUD is scaled by 120%, with a screen-width clamp.
+- Hand cards are enlarged by 10%, while the usable hand width is tightened to increase overlap.
+
+The first layout pass is committed and has passed patch-application and Lua syntax checks. It still requires visual and interaction testing on the iPhone 11 before being treated as final.
+
+## Deferred UI option
+
+- A two-row hand remains a separate optional mode if the single-row layout cannot meet the size target. Preserve selection, dragging, sorting and play/discard behavior.
 
 ## Development rules
 
-- Keep the GitHub repository on a single `main` branch.
+- Keep exactly one working branch: `main`.
 - Do not create additional branches unless explicitly authorized.
 - Preserve upstream attribution and license notices.
-- Keep game-owned source and assets out of commits; builds should use a legally owned local copy of Balatro.
+- Do not commit the Balatro IPA, proprietary game source, or proprietary game assets. Build from a legally owned local game copy.
+- Increment the project version and update the changelog whenever a user-facing release change is made.

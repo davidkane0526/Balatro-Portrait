@@ -1,0 +1,399 @@
+--- a/functions/state_events.lua
++++ b/functions/state_events.lua
+@@ -378,6 +378,7 @@
+ 
+ G.FUNCS.discard_cards_from_highlighted = function(e, hook)
+     stop_use()
++    trigger_haptic('MEDIUM')
+     G.CONTROLLER.interrupt.focus = true
+     G.CONTROLLER:save_cardarea_focus('hand')
+ 
+@@ -449,6 +450,7 @@
+   
+ G.FUNCS.play_cards_from_highlighted = function(e)
+     if G.play and G.play.cards[1] then return end
++    trigger_haptic('HEAVY')
+     --check the hand first
+ 
+     stop_use()
+@@ -489,8 +491,11 @@
+             G.E_MANAGER:add_event(Event({
+                 trigger = 'immediate',
+                 func = (function()
+-                    G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_1'):juice_up(0.3, 0)
+-                    G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_2'):juice_up(0.3, 0)
++                    local _hud_blind = G.HUD_blind
++                    if _hud_blind then
++                        local _d1 = _hud_blind:get_UIE_by_ID('HUD_blind_debuff_1'); if _d1 then _d1:juice_up(0.3, 0) end
++                        local _d2 = _hud_blind:get_UIE_by_ID('HUD_blind_debuff_2'); if _d2 then _d2:juice_up(0.3, 0) end
++                    end
+                     G.GAME.blind:juice_up()
+                     G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0.06*G.SETTINGS.GAMESPEED, blockable = false, blocking = false, func = function()
+                         play_sound('tarot2', 0.76, 0.4);return true end}))
+@@ -656,9 +661,15 @@
+                 G.GAME.blind.triggered = true
+                 G.E_MANAGER:add_event(Event({
+                     trigger = 'immediate',
+-                    func = (function() G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_1'):juice_up(0.3, 0)
+-                        G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_2'):juice_up(0.3, 0)
+-                        G.GAME.blind:juice_up();return true end)
++                    func = (function()
++                        local _hud_blind = G.HUD_blind
++                        if _hud_blind then
++                            local _d1 = _hud_blind:get_UIE_by_ID('HUD_blind_debuff_1'); if _d1 then _d1:juice_up(0.3, 0) end
++                            local _d2 = _hud_blind:get_UIE_by_ID('HUD_blind_debuff_2'); if _d2 then _d2:juice_up(0.3, 0) end
++                        end
++                        G.GAME.blind:juice_up()
++                        return true
++                    end)
+                 }))
+                 card_eval_status_text(scoring_hand[i], 'debuff')
+             else
+@@ -1000,8 +1011,11 @@
+         G.E_MANAGER:add_event(Event({
+             trigger = 'immediate',
+             func = (function()
+-                G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_1'):juice_up(0.3, 0)
+-                G.HUD_blind:get_UIE_by_ID('HUD_blind_debuff_2'):juice_up(0.3, 0)
++                local _hud_blind = G.HUD_blind
++                if _hud_blind then
++                    local _d1 = _hud_blind:get_UIE_by_ID('HUD_blind_debuff_1'); if _d1 then _d1:juice_up(0.3, 0) end
++                    local _d2 = _hud_blind:get_UIE_by_ID('HUD_blind_debuff_2'); if _d2 then _d2:juice_up(0.3, 0) end
++                end
+                 G.GAME.blind:juice_up()
+                 G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0.06*G.SETTINGS.GAMESPEED, blockable = false, blocking = false, func = function()
+                     play_sound('tarot2', 0.76, 0.4);return true end}))
+@@ -1228,7 +1242,11 @@
+             G.SETTINGS.tutorial_progress.completed_parts['small_blind']  = true
+             G:save_progress()
+         end
+-        if G.STATE == G.STATES.BLIND_SELECT and G.blind_select and not G.SETTINGS.tutorial_progress.completed_parts['big_blind'] and G.GAME.round > 0 then
++        local big_blind_tutorial_ready = G.STATE == G.STATES.BLIND_SELECT and G.blind_select and
++            not G.SETTINGS.tutorial_progress.completed_parts['big_blind'] and
++            (G.GAME.round > 0 or G.SETTINGS.tutorial_progress.completed_parts['shop_1']) and
++            (not G.F_PORTRAIT or (G.blind_select_opts and G.blind_select_opts.big and G.blind_select_opts.boss))
++        if big_blind_tutorial_ready then
+             G.SETTINGS.tutorial_progress.section = 'big_blind'
+             G.FUNCS.tutorial_part('big_blind')
+             G.SETTINGS.tutorial_progress.completed_parts['big_blind']  = true
+@@ -1268,7 +1286,13 @@
+                 G:save_progress()
+             end
+         end
+-         if G.STATE == G.STATES.SHOP and G.shop and G.shop.VT.y < 5 and not G.SETTINGS.tutorial_progress.completed_parts['shop_1'] then
++        local shop_tutorial_ready = G.STATE == G.STATES.SHOP and G.shop and not G.SETTINGS.tutorial_progress.completed_parts['shop_1'] and (
++            (not G.F_PORTRAIT and G.shop.VT.y < 5) or
++            (G.F_PORTRAIT and G.SHOP_SIGN and G.shop_jokers and G.shop_jokers.cards and G.shop_jokers.cards[2] and
++                G.shop_vouchers and G.shop_vouchers.cards and G.shop_vouchers.cards[1] and
++                G.shop_booster and G.shop_booster.cards and G.shop_booster.cards[1])
++        )
++        if shop_tutorial_ready then
+             G.SETTINGS.tutorial_progress.section = 'shop'
+             G.FUNCS.tutorial_part('shop_1')
+             G.SETTINGS.tutorial_progress.completed_parts['shop_1']  = true
+@@ -1281,6 +1305,35 @@
+ G.FUNCS.tutorial_part = function(_part)
+     local step = 1
+     G.SETTINGS.paused = true
++    local function portrait_attach(default_attach, y)
++        if G.F_PORTRAIT then
++            return {major = G.ROOM_ATTACH, type = 'cm', offset = {x = 0, y = y or -4}}
++        end
++        return default_attach
++    end
++    local function compact_highlight(...)
++        local compacted = {}
++        for i = 1, select('#', ...) do
++            local node = select(i, ...)
++            if node then compacted[#compacted + 1] = node end
++        end
++        return compacted
++    end
++    local function blind_select_child(fallback_index)
++        local row = G.blind_select and G.blind_select.UIRoot and G.blind_select.UIRoot.children and G.blind_select.UIRoot.children[1]
++        return row and row.children and row.children[fallback_index] or nil
++    end
++    local function blind_choice_object(key, fallback_index)
++        if G.blind_select_opts and G.blind_select_opts[key] then
++            return G.blind_select_opts[key]
++        end
++        local child = blind_select_child(fallback_index)
++        return child and child.config and child.config.object or nil
++    end
++    local function blind_choice_uie(key, fallback_index, id)
++        local object = blind_choice_object(key, fallback_index)
++        return object and object.get_UIE_by_ID and object:get_UIE_by_ID(id) or nil
++    end
+     if _part == 'small_blind' then 
+         step = tutorial_info({
+             text_key = 'sb_1',
+@@ -1316,60 +1369,61 @@
+             button_listen = 'select_blind'
+         })
+     elseif _part == 'big_blind' then 
++        local function big_blind_attach()
++            return portrait_attach({major = G.HUD, type = 'cm', offset = {x = 0, y = -2}}, -8)
++        end
+         step = tutorial_info({
+             text_key = 'bb_1',
+-            highlight = {
+-                G.blind_select.UIRoot.children[1].children[2].config.object:get_UIE_by_ID('blind_name'),
+-                G.blind_select.UIRoot.children[1].children[2].config.object:get_UIE_by_ID('blind_desc'),
+-            },
++            highlight = compact_highlight(
++                blind_choice_uie('big', 2, 'blind_name'),
++                blind_choice_uie('big', 2, 'blind_desc')
++            ),
+             hard_set = true,
+-            attach = {major =  G.HUD, type = 'cm', offset = {x = 0, y = -2}},
++            attach = big_blind_attach(),
+             step = step,
+         })
+         step = tutorial_info({
+             text_key = 'bb_2',
+-            highlight = {
+-                G.blind_select.UIRoot.children[1].children[2].config.object:get_UIE_by_ID('blind_name'),
+-                G.blind_select.UIRoot.children[1].children[2].config.object:get_UIE_by_ID('tag_desc'),
+-            },
+-            attach = {major =  G.HUD, type = 'cm', offset = {x = 0, y = -2}},
++            highlight = compact_highlight(
++                blind_choice_uie('big', 2, 'blind_name'),
++                blind_choice_uie('big', 2, 'tag_desc')
++            ),
++            attach = big_blind_attach(),
+             step = step,
+         })
+         step = tutorial_info({
+             text_key = 'bb_3',
+-            highlight = {
+-                G.blind_select.UIRoot.children[1].children[3].config.object:get_UIE_by_ID('blind_name'),
+-                G.blind_select.UIRoot.children[1].children[3].config.object:get_UIE_by_ID('blind_desc'),
+-            },
+-            attach = {major =  G.HUD, type = 'cm', offset = {x = 0, y = -2}},
++            highlight = compact_highlight(
++                blind_choice_uie('boss', 3, 'blind_name'),
++                blind_choice_uie('boss', 3, 'blind_desc')
++            ),
++            attach = big_blind_attach(),
+             step = step,
+         })
+         step = tutorial_info({
+             text_key = 'bb_4',
+-            highlight = {
+-                G.blind_select.UIRoot.children[1].children[3].config.object:get_UIE_by_ID('blind_name'),
+-                G.blind_select.UIRoot.children[1].children[3].config.object:get_UIE_by_ID('blind_desc'),
+-                G.blind_select.UIRoot.children[1].children[3].config.object:get_UIE_by_ID('blind_extras'),
++            highlight = compact_highlight(
++                blind_choice_uie('boss', 3, 'blind_name'),
++                blind_choice_uie('boss', 3, 'blind_desc'),
++                blind_choice_uie('boss', 3, 'blind_extras'),
+                 G.HUD:get_UIE_by_ID('hud_ante')
+-            },
+-            attach = {major =  G.HUD, type = 'cm', offset = {x = 0, y = -2}},
++            ),
++            attach = big_blind_attach(),
+             step = step,
+         })
+         step = tutorial_info({
+             text_key = 'bb_5',
+             loc_vars = {G.GAME.win_ante},
+-            highlight = {
++            highlight = compact_highlight(
+                 G.blind_select,
+                 G.HUD:get_UIE_by_ID('hud_ante')
+-            },
+-            attach = {major =  G.HUD, type = 'cm', offset = {x = 0, y = -2}},
++            ),
++            attach = big_blind_attach(),
+             step = step,
+             no_button = true,
+             snap_to = function() 
+-                if G.blind_select and G.blind_select.UIRoot and G.blind_select.UIRoot.children[1] and G.blind_select.UIRoot.children[1].children[2] and
+-                G.blind_select.UIRoot.children[1].children[2].config.object then 
+-                    return G.blind_select.UIRoot.children[1].children[2].config.object:get_UIE_by_ID('select_blind_button') end
+-                end,
++                return blind_choice_uie('big', 2, 'select_blind_button')
++            end,
+             button_listen = 'select_blind'
+         })
+     elseif _part == 'first_hand' then
+@@ -1398,6 +1452,9 @@
+             step = step,
+         })
+     elseif _part == 'first_hand_2' then
++        local hand_attach = G.F_PORTRAIT and
++            {major = G.ROOM_ATTACH, type = 'cm', offset = {x = 0, y = -10}} or
++            {major = G.hand, type = 'cl', offset = {x = -1.5, y = 0}}
+         step = tutorial_info({
+             hard_set = true,
+             text_key = 'fh_4',
+@@ -1405,7 +1462,7 @@
+                 G.hand,
+                 G.HUD:get_UIE_by_ID('run_info_button')
+             },
+-            attach = {major = G.hand, type = 'cl', offset = {x = -1.5, y = 0}},
++            attach = hand_attach,
+             snap_to = function() return G.hand.cards[1] end,
+             step = step,
+         })
+@@ -1416,12 +1473,15 @@
+                 G.buttons:get_UIE_by_ID('play_button'),
+                 G.HUD:get_UIE_by_ID('run_info_button')
+             },
+-            attach = {major = G.hand, type = 'cl', offset = {x = -1.5, y = 0}},
++            attach = hand_attach,
+             no_button = true,
+             button_listen = 'play_cards_from_highlighted',
+             step = step,
+         })
+     elseif _part == 'first_hand_3' then
++        local hand_attach = G.F_PORTRAIT and
++            {major = G.ROOM_ATTACH, type = 'cm', offset = {x = 0, y = -10}} or
++            {major = G.hand, type = 'cl', offset = {x = -1.5, y = 0}}
+         step = tutorial_info({
+             hard_set = true,
+             text_key = 'fh_6',
+@@ -1430,7 +1490,7 @@
+                 G.buttons:get_UIE_by_ID('discard_button'),
+                 G.HUD:get_UIE_by_ID('run_info_button')
+             },
+-            attach = {major = G.hand, type = 'cl', offset = {x = -1.5, y = 0}},
++            attach = hand_attach,
+             no_button = true,
+             button_listen = 'discard_cards_from_highlighted',
+             step = step,
+@@ -1496,7 +1556,7 @@
+                 G.SHOP_SIGN,
+                 G.HUD:get_UIE_by_ID('dollar_text_UI').parent.parent.parent
+             },
+-            attach = {major = G.shop, type = 'tm', offset = {x = 0, y = 4}},
++            attach = portrait_attach({major = G.shop, type = 'tm', offset = {x = 0, y = 4}}),
+             step = step,
+         })
+         step = tutorial_info({
+@@ -1507,7 +1567,7 @@
+                 G.shop_jokers.cards[2],
+             },
+             snap_to = function() return G.shop_jokers.cards[2] end,
+-            attach = {major = G.shop, type = 'tr', offset = {x = -0.5, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tr', offset = {x = -0.5, y = 6}}),
+             no_button = true,
+             button_listen = 'buy_from_shop',
+             step = step,
+@@ -1520,7 +1580,7 @@
+                 G.HUD:get_UIE_by_ID('dollar_text_UI').parent.parent.parent,
+                 G.jokers.cards[1],
+             } end,
+-            attach = {major = G.shop, type = 'tm', offset = {x = 0, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tm', offset = {x = 0, y = 6}}),
+             step = step,
+         })
+         step = tutorial_info({
+@@ -1530,7 +1590,7 @@
+                 G.HUD:get_UIE_by_ID('dollar_text_UI').parent.parent.parent,
+                 G.jokers.cards[1],
+             } end,
+-            attach = {major = G.shop, type = 'tm', offset = {x = 0, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tm', offset = {x = 0, y = 6}}),
+             step = step,
+         })
+         step = tutorial_info({
+@@ -1540,7 +1600,7 @@
+                 G.HUD:get_UIE_by_ID('dollar_text_UI').parent.parent.parent,
+                 G.jokers,
+             } end,
+-            attach = {major = G.shop, type = 'tm', offset = {x = 0, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tm', offset = {x = 0, y = 6}}),
+             step = step,
+         })
+         step = tutorial_info({
+@@ -1553,7 +1613,7 @@
+             snap_to = function() return G.shop_jokers.cards[1] end,
+             no_button = true,
+             button_listen = 'buy_from_shop',
+-            attach = {major = G.shop, type = 'tr', offset = {x = -0.5, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tr', offset = {x = -0.5, y = 6}}),
+             step = step,
+         })
+         step = tutorial_info({
+@@ -1563,7 +1623,7 @@
+                 G.HUD:get_UIE_by_ID('dollar_text_UI').parent.parent.parent,
+                 G.consumeables.cards[#G.consumeables.cards],
+             } end,
+-            attach = {major = G.shop, type = 'tm', offset = {x = 0, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tm', offset = {x = 0, y = 6}}),
+             step = step,
+         })
+         step = tutorial_info({
+@@ -1573,7 +1633,7 @@
+                 G.HUD:get_UIE_by_ID('dollar_text_UI').parent.parent.parent,
+                 G.consumeables
+             } end,
+-            attach = {major = G.shop, type = 'tm', offset = {x = 0, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tm', offset = {x = 0, y = 6}}),
+             step = step,
+         })
+         step = tutorial_info({
+@@ -1584,7 +1644,7 @@
+                 G.shop_vouchers,
+             } end,
+             snap_to = function() return G.shop_vouchers.cards[1] end,
+-            attach = {major = G.shop, type = 'tr', offset = {x = -4, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tr', offset = {x = -4, y = 6}}),
+             step = step,
+         })
+         step = tutorial_info({
+@@ -1594,7 +1654,7 @@
+                 G.HUD:get_UIE_by_ID('dollar_text_UI').parent.parent.parent,
+                 G.shop_vouchers,
+             } end,
+-            attach = {major = G.shop, type = 'tr', offset = {x = -4, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tr', offset = {x = -4, y = 6}}),
+             step = step,
+         })
+         step = tutorial_info({
+@@ -1605,7 +1665,7 @@
+                 G.shop_booster,
+             } end,
+             snap_to = function() return G.shop_booster.cards[1] end,
+-            attach = {major = G.shop, type = 'tl', offset = {x = 3, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tl', offset = {x = 3, y = 6}}),
+             step = step,
+         })
+         step = tutorial_info({
+@@ -1616,7 +1676,7 @@
+             snap_to = function() if G.shop then return G.shop:get_UIE_by_ID('next_round_button') end end,
+             no_button = true,
+             button_listen = 'toggle_shop',
+-            attach = {major = G.shop, type = 'tm', offset = {x = 0, y = 6}},
++            attach = portrait_attach({major = G.shop, type = 'tm', offset = {x = 0, y = 6}}),
+             step = step,
+         })
+     end
+@@ -1626,16 +1686,19 @@
+         blockable = false,
+         timer = 'REAL',
+         func = function()
+-            if (G.OVERLAY_TUTORIAL.step == step and
+-            not G.OVERLAY_TUTORIAL.step_complete) or G.OVERLAY_TUTORIAL.skip_steps then
+-                if G.OVERLAY_TUTORIAL.Jimbo then G.OVERLAY_TUTORIAL.Jimbo:remove() end
+-                if G.OVERLAY_TUTORIAL.content then G.OVERLAY_TUTORIAL.content:remove() end
+-                G.OVERLAY_TUTORIAL:remove()
+-                G.OVERLAY_TUTORIAL = nil
++            local overlay = G and rawget(G, 'OVERLAY_TUTORIAL') or nil
++            if not overlay then
++                return true
++            end
++            if (overlay.step == step and not overlay.step_complete) or overlay.skip_steps then
++                if overlay.Jimbo then overlay.Jimbo:remove() end
++                if overlay.content then overlay.content:remove() end
++                overlay:remove()
++                if G and rawget(G, 'OVERLAY_TUTORIAL') == overlay then rawset(G, 'OVERLAY_TUTORIAL', nil) end
+                 G.SETTINGS.tutorial_progress.hold_parts[_part]=true
+                 return true
+             end
+-            return G.OVERLAY_TUTORIAL.step > step or G.OVERLAY_TUTORIAL.skip_steps
++            return overlay.step > step or overlay.skip_steps
+         end
+     }), 'tutorial') 
+     G.SETTINGS.paused = false

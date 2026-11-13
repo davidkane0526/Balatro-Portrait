@@ -1,0 +1,42 @@
+name: Validate Balatro Portrait main
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Python sources
+        run: python -m py_compile build.py tools/patches.py tools/make_release.py tests/patches_test.py tests/ipa_input_test.py
+      - name: Validate Lua patch files
+        run: python tools/patches.py lint
+      - name: Run patch engine tests
+        run: python tests/patches_test.py
+      - name: Run IPA and Balatro+ compatibility tests
+        run: python tests/ipa_input_test.py
+      - name: Check build CLI
+        run: python build.py --help
+      - name: Check version consistency
+        run: |
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          config = Path("src/portrait_config.lua").read_text()
+          version = re.search(r'^\s*version\s*=\s*"([^"]+)"', config, re.M).group(1)
+          prop = Path("zygisk/module/module.prop").read_text()
+          update = json.loads(Path("zygisk/update.json").read_text())
+          assert f"version={version}" in prop
+          assert update["version"] == version
+          assert update["versionCode"] == int(version.replace(".", "")) + 900
+          print("version metadata consistent:", version)
+          PY

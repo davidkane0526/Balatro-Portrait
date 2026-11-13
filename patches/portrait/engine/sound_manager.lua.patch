@@ -1,0 +1,35 @@
+--- a/engine/sound_manager.lua
++++ b/engine/sound_manager.lua
+@@ -53,8 +53,22 @@
+         end
+     end
+ 
++    -- Every copy is busy, so play one more. A sound already in memory is
++    -- cloned, with no file read: in the rootless APK the game is one zip, and
++    -- opening a file there from this thread while the game reads too has failed
++    -- as "not found" (#10). If a file still cannot be opened, that one sound is
++    -- skipped and the game goes on.
+     local should_stream = (string.find(args.sound_code,'music') or string.find(args.sound_code,'ambient'))
+-    local s = {sound = love.audio.newSource("resources/sounds/"..args.sound_code..'.ogg', should_stream and "stream" or 'static')}
++    local loaded = SOURCES[args.sound_code][1]
++    local ok, source
++    if loaded and loaded.sound and not should_stream then
++        ok, source = pcall(loaded.sound.clone, loaded.sound)
++    end
++    if not ok then
++        ok, source = pcall(love.audio.newSource, "resources/sounds/"..args.sound_code..'.ogg', should_stream and "stream" or 'static')
++    end
++    if not ok then return nil end
++    local s = {sound = source}
+     table.insert(SOURCES[args.sound_code], s)
+     s.sound_code = args.sound_code
+     s.original_pitch = args.per or 1
+@@ -144,7 +158,7 @@
+             args.vol = 0.6
+             args.sound_code = k
+             local s = PLAY_SOUND(args)
+-            s.initialized = true
++            if s then s.initialized = true end
+         end
+     end
+   end

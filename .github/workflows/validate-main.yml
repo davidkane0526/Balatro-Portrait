@@ -17,7 +17,15 @@ jobs:
         with:
           python-version: "3.11"
       - name: Compile Python sources
-        run: python -m py_compile build.py tools/patches.py tools/make_release.py tests/patches_test.py tests/ipa_input_test.py tests/font_regression_test.py
+        run: python -m py_compile build.py tools/patches.py tools/make_release.py tests/patches_test.py tests/ipa_input_test.py tests/font_regression_test.py tests/version_syntax_test.py
+      - name: Parse tracked Lua files with Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.1
+          find src -type f -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+          luac5.1 -p zygisk/patcher.lua
+      - name: Validate version comma regression
+        run: python tests/version_syntax_test.py
       - name: Validate Lua patch files
         run: python tools/patches.py lint
       - name: Run patch engine tests

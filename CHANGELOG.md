@@ -2,6 +2,13 @@
 
 All notable changes to Balatro Portrait Mobile.
 
+## v1.0.12 — 2026-11-14
+
+- Fix the missing comma following `PORTRAIT_CONFIG.version`. This Lua syntax error prevented v1.0.11 from starting on iOS.
+- Make `build.py` reject malformed version declarations before any game assets are packaged.
+- Add a regression test for the version parser, and parse all tracked Lua sources with Lua 5.1 in GitHub Actions.
+- Preserve the v1.0.10 iOS UI layout refinements and v1.0.11 Simplified Chinese font correction. iPhone runtime validation is still required.
+
 ## v1.0.11 — 2026-11-14
 
 - Fix the Simplified Chinese font configuration at the source patch level for iOS and Android mobile builds. The game now loads the bundled `GoNotoCJKCore.ttf` for Simplified Chinese at `TILESIZE*7/3` and `FONTSCALE=0.36`, preserving nominal text scale while avoiding the problematic high-resolution `NotoSansSC-Bold.ttf` rasterization path that crashed at the glyph `惠` (`FT_Glyph_To_Bitmap`, 0x62).

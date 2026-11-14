@@ -9,7 +9,7 @@ Custom portrait-mode development repository for Balatro, based on the upstream *
 - Default branch: `main` only
 - The upstream build system, portrait patches, source configuration, tests, tooling, documentation and Readabletro assets are imported.
 - Upstream CI workflows are intentionally not copied; this repository will add only the checks needed for this fork.
-- Fork development version: `1.0.11`.
+- Fork development version: `1.0.12`.
 
 ## Uploaded iOS game package compatibility
 
@@ -62,6 +62,13 @@ The first layout pass is committed and has passed patch-application and Lua synt
 - The mobile patch now selects the already-bundled `GoNotoCJKCore.ttf` for Simplified Chinese. The rendering raster size was reduced from `TILESIZE*7` to `TILESIZE*7/3` and `FONTSCALE` adjusted from `0.12` to `0.36`, keeping the nominal rendered text scale equal (`7*0.12 = (7/3)*0.36`).
 - This corrects the reported font raster overflow while preserving Chinese text. The fix is part of the **source patch** so future IPA builds cannot silently drop it.
 - An actual iPhone shop test is still necessary to confirm runtime behavior.
+
+## v1.0.12 launch crash fix
+
+- Corrected the missing Lua table-field comma after `PORTRAIT_CONFIG.version` which prevented v1.0.11 from starting.
+- Version declaration syntax is now checked at the beginning of every build, even if the local machine has no Lua compiler.
+- Continuous integration installs Lua 5.1 and syntax-checks tracked `src/*.lua` files, preventing this class of crash from escaping validation.
+- Previous UI refinements and Chinese font rendering fixes are retained.
 
 ## Deferred UI option
 

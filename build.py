@@ -53,18 +53,28 @@ import zipfile
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _parse_mod_version(config_source):
+    """Parse the version field, insisting on a valid Lua table-field comma.
+
+    A missing comma previously produced a seemingly valid IPA that crashed
+    immediately on iOS when portrait_config.lua was loaded.
+    """
+    match = re.search(
+        r'^[ \\t]*version[ \\t]*=[ \\t]*"([^"\\r\\n]+)"[ \\t]*,[ \\t]*(?:--[^\\r\\n]*)?$',
+        config_source, re.MULTILINE)
+    if not match:
+        raise RuntimeError(
+            'Invalid PORTRAIT_CONFIG.version in src/portrait_config.lua: '
+            'the version string must be followed by a comma.')
+    return match.group(1)
+
+
 def _read_mod_version():
-    """The mod version lives in src/portrait_config.lua (PORTRAIT_CONFIG.version)
-    so the game can show it in Options -> Diagnostics; parse it from there
-    instead of keeping a second copy here that can drift."""
+    """The mod version lives in src/portrait_config.lua (PORTRAIT_CONFIG.version)."""
     config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "src", "portrait_config.lua")
     with open(config_path, encoding="utf-8") as fh:
-        match = re.search(r'^\s*version\s*=\s*"([^"]+)"', fh.read(), re.MULTILINE)
-    if not match:
-        raise RuntimeError("PORTRAIT_CONFIG.version not found in src/portrait_config.lua")
-    return match.group(1)
-
+        return _parse_mod_version(fh.read())
 
 MOD_VERSION = _read_mod_version()
 

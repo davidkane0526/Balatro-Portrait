@@ -17,11 +17,13 @@ jobs:
         with:
           python-version: "3.11"
       - name: Compile Python sources
-        run: python -m py_compile build.py tools/patches.py tools/make_release.py tests/patches_test.py tests/ipa_input_test.py
+        run: python -m py_compile build.py tools/patches.py tools/make_release.py tests/patches_test.py tests/ipa_input_test.py tests/font_regression_test.py
       - name: Validate Lua patch files
         run: python tools/patches.py lint
       - name: Run patch engine tests
         run: python tests/patches_test.py
+      - name: Run Simplified Chinese font regression test
+        run: python tests/font_regression_test.py
       - name: Run IPA and Balatro+ compatibility tests
         run: python tests/ipa_input_test.py
       - name: Run portrait UI regression checks

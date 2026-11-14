@@ -2,6 +2,12 @@
 
 All notable changes to Balatro Portrait Mobile.
 
+## v1.0.11 — 2026-11-14
+
+- Fix the Simplified Chinese font configuration at the source patch level for iOS and Android mobile builds. The game now loads the bundled `GoNotoCJKCore.ttf` for Simplified Chinese at `TILESIZE*7/3` and `FONTSCALE=0.36`, preserving nominal text scale while avoiding the problematic high-resolution `NotoSansSC-Bold.ttf` rasterization path that crashed at the glyph `惠` (`FT_Glyph_To_Bitmap`, 0x62).
+- Retain the v1.0.10 iOS action-row offset and New Run menu size adjustments.
+- Add a persistent regression check for the font patch; on-device shop, multilingual text, and layout verification are still required.
+
 ## v1.0.10 — 2026-11-14
 
 - Lower the Classic Play/Sort/Discard action row on iOS, without moving the hand or changing the Swipe Only and Android layouts.

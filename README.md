@@ -9,7 +9,7 @@ Custom portrait-mode development repository for Balatro, based on the upstream *
 - Default branch: `main` only
 - The upstream build system, portrait patches, source configuration, tests, tooling, documentation and Readabletro assets are imported.
 - Upstream CI workflows are intentionally not copied; this repository will add only the checks needed for this fork.
-- Fork development version: `1.0.10`.
+- Fork development version: `1.0.11`.
 
 ## Uploaded iOS game package compatibility
 
@@ -56,6 +56,12 @@ The first layout pass is committed and has passed patch-application and Lua synt
 - The New Run / Continue / Challenges tabs, deck description, panel and Start Game button are slightly larger. Each size is configurable through `mobile_ui.run_setup_*` values.
 - `python tests/ui_layout_test.py` validates parameter constraints. The existing Windows headless runner (`tools/headless/run.py --scenario menus --device iphone15`) can flag clipped menus and text when run with an owned game copy.
 - The new size values need real-device screenshot and touch validation before being considered final.
+
+## Chinese font crash fix in v1.0.11
+
+- The mobile patch now selects the already-bundled `GoNotoCJKCore.ttf` for Simplified Chinese. The rendering raster size was reduced from `TILESIZE*7` to `TILESIZE*7/3` and `FONTSCALE` adjusted from `0.12` to `0.36`, keeping the nominal rendered text scale equal (`7*0.12 = (7/3)*0.36`).
+- This corrects the reported font raster overflow while preserving Chinese text. The fix is part of the **source patch** so future IPA builds cannot silently drop it.
+- An actual iPhone shop test is still necessary to confirm runtime behavior.
 
 ## Deferred UI option
 

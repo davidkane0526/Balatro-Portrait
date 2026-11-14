@@ -159,7 +159,7 @@
 +    -- cue, which leaves the middle free for it.
 +    G.buttons = UIBox{
 +        definition = create_UIBox_buttons(),
-+        config = {align = 'bm', offset = {x=0, y=swipe_only and 0.02 or 0.45}, major = G.hand, bond = 'Weak'}
++        config = {align = 'bm', offset = {x=0, y=swipe_only and 0.02 or ((G.F_PORTRAIT and love.system.getOS() == 'iOS') and (PORTRAIT_CONFIG.action_row_offset_ios or 1.55) or 0.45)}, major = G.hand, bond = 'Weak'}
 +    }
 +end
 +

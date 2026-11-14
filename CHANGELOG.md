@@ -2,6 +2,12 @@
 
 All notable changes to Balatro Portrait Mobile.
 
+## v1.0.10 — 2026-11-14
+
+- Lower the Classic Play/Sort/Discard action row on iOS, without moving the hand or changing the Swipe Only and Android layouts.
+- Enlarge the New Run / Continue / Challenges tabs, run setup panel, deck description and Start Game button with portrait-only settings.
+- Add automated layout parameter regression tests; on-device visual and touch verification still required.
+
 ## [v1.0.9](https://github.com/davidkane0526/Balatro-Portrait/releases/tag/v1.0.9) - 2026-11-13
 
 - Detect and support the supplied Balatro+ mobile source variant (game version `1.0.1o`, target `PROD_mobile`), including its newer collaboration credits and changed mobile feature flags.

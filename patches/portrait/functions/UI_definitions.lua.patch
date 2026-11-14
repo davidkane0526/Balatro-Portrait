@@ -323,7 +323,7 @@
  
            args.text = args.AT.UIRoot.children[1].config.object
            args.text:pulse(0.5)
-@@ -983,22 +1055,109 @@
+@@ -983,22 +1055,118 @@
        }))
    end
  
@@ -501,7 +501,7 @@
        end
      end
      if tooltip.filler then 
-@@ -1208,59 +1372,145 @@
+@@ -1208,59 +1372,163 @@
    end
  
 +local function portrait_scale_hud_tree(node, factor)
@@ -716,7 +716,7 @@
      return {n=G.UIT.ROOT, config = {align = "cm", padding = 0.03, colour = G.C.UI.TRANSPARENT_DARK}, nodes={
        {n=G.UIT.R, config = {align = "cm", padding= 0.05, colour = G.C.DYN_UI.MAIN, r=0.1}, nodes={
          {n=G.UIT.R, config={align = "cm", colour = G.C.DYN_UI.BOSS_DARK, r=0.1, minh = 30, padding = 0.08}, nodes={
-@@ -1414,15 +1663,273 @@
+@@ -1414,15 +1663,277 @@
      }}
  end
  
@@ -2378,6 +2378,18 @@
          snap_to_nav = true}),
        }}
    }})
+@@ -5322,8 +5322,10 @@
+               chosen = _challenge_chosen
+             } or nil,
+         },
+-        snap_to_nav = true}),
++        snap_to_nav = true,
++        scale = G.F_PORTRAIT and (PORTRAIT_CONFIG.mobile_ui.run_setup_tab_scale or 1.07) or 1,
++        text_scale = G.F_PORTRAIT and (PORTRAIT_CONFIG.mobile_ui.run_setup_tab_text_scale or 0.54) or 0.5}),
+       }},
+   }})
+   return t
+ end
 @@ -5501,6 +6509,11 @@
  
  function G.UIDEF.challenge_list(from_game_over)
@@ -2458,14 +2470,16 @@
 @@ -6023,6 +7059,10 @@
    local type_colour = G.C.BLUE
  
-   local scale = 0.39
+-  local scale = 0.39
 +  local mobile_ui = PORTRAIT_CONFIG.mobile_ui or {}
++  local scale = G.F_PORTRAIT and (mobile_ui.run_setup_font_scale or 0.44) or 0.39
 +  local setup_back_desc_scale = G.F_PORTRAIT and (mobile_ui.run_setup_back_desc_scale or 0.72) or nil
 +  local setup_back_min_dims = G.F_PORTRAIT and (mobile_ui.run_setup_back_min_dims or 0.76) or nil
 +  local setup_back_desc_h = G.F_PORTRAIT and (mobile_ui.run_setup_back_desc_h or 1.9) or 1.7
    G.setup_seed = ''
  
-   local t = {n=G.UIT.ROOT, config={align = "cm", colour = G.C.CLEAR, minh = 6.6, minw = 6}, nodes={
+-  local t = {n=G.UIT.ROOT, config={align = "cm", colour = G.C.CLEAR, minh = 6.6, minw = 6}, nodes={
++  local t = {n=G.UIT.ROOT, config={align = "cm", colour = G.C.CLEAR, minh = G.F_PORTRAIT and (mobile_ui.run_setup_minh or 7.0) or 6.6, minw = G.F_PORTRAIT and (mobile_ui.run_setup_minw or 6.45) or 6}, nodes={
 @@ -6082,8 +7122,8 @@
                                    {n=G.UIT.R, config={align = "cm", r = 0.1, minw = 4, maxw = 4, minh = 0.6}, nodes={
                                      {n=G.UIT.O, config={id = nil, func = 'RUN_SETUP_check_back_name', object = Moveable()}},
@@ -2494,7 +2508,8 @@
 +                    -- Portrait: "Durchlauf mit Code" on two lines, or the row is wider than the phone.
 +                    type == 'New Run' and create_toggle{col = true, label = G.F_PORTRAIT and portrait_label_text(localize('k_seeded_run'), 1.6, 0.38) or localize('k_seeded_run'), label_scale = G.F_PORTRAIT and 0.38 or 0.25, w = 0, scale = G.F_PORTRAIT and 1.05 or 0.7, ref_table = G, ref_value = 'run_setup_seed'} or nil
                    }},
-                     {n=G.UIT.C, config={align = "cm", minw = 5, minh = 0.8, padding = 0.2, r = 0.1, hover = true, colour = G.C.BLUE, button = "start_setup_run", shadow = true, func = 'can_start_run'}, nodes={
+-                    {n=G.UIT.C, config={align = "cm", minw = 5, minh = 0.8, padding = 0.2, r = 0.1, hover = true, colour = G.C.BLUE, button = "start_setup_run", shadow = true, func = 'can_start_run'}, nodes={
++                    {n=G.UIT.C, config={align = "cm", minw = G.F_PORTRAIT and (mobile_ui.run_setup_play_minw or 5.45) or 5, minh = G.F_PORTRAIT and (mobile_ui.run_setup_play_minh or 0.98) or 0.8, padding = 0.2, r = 0.1, hover = true, colour = G.C.BLUE, button = "start_setup_run", shadow = true, func = 'can_start_run'}, nodes={
                        {n=G.UIT.R, config={align = "cm", padding = 0}, nodes={
 @@ -6155,6 +7198,23 @@
      }}

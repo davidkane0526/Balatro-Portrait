@@ -9,7 +9,7 @@ Custom portrait-mode development repository for Balatro, based on the upstream *
 - Default branch: `main` only
 - The upstream build system, portrait patches, source configuration, tests, tooling, documentation and Readabletro assets are imported.
 - Upstream CI workflows are intentionally not copied; this repository will add only the checks needed for this fork.
-- Fork development version: `1.0.9`.
+- Fork development version: `1.0.10`.
 
 ## Uploaded iOS game package compatibility
 
@@ -49,6 +49,13 @@ python build.py --balatro /path/to/Balatro.ipa --ios --ios-vanilla --readabletro
 - Hand cards are enlarged by 10%, while the usable hand width is tightened to increase overlap.
 
 The first layout pass is committed and has passed patch-application and Lua syntax checks. It still requires visual and interaction testing on the iPhone 11 before being treated as final.
+
+## UI refinements in v1.0.10
+
+- iOS Classic Play/Sort/Discard now uses `action_row_offset_ios = 1.55`, while Swipe Only, Android and nonportrait layouts retain their previous offsets.
+- The New Run / Continue / Challenges tabs, deck description, panel and Start Game button are slightly larger. Each size is configurable through `mobile_ui.run_setup_*` values.
+- `python tests/ui_layout_test.py` validates parameter constraints. The existing Windows headless runner (`tools/headless/run.py --scenario menus --device iphone15`) can flag clipped menus and text when run with an owned game copy.
+- The new size values need real-device screenshot and touch validation before being considered final.
 
 ## Deferred UI option
 

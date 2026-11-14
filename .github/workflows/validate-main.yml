@@ -24,6 +24,8 @@ jobs:
         run: python tests/patches_test.py
       - name: Run IPA and Balatro+ compatibility tests
         run: python tests/ipa_input_test.py
+      - name: Run portrait UI regression checks
+        run: python tests/ui_layout_test.py
       - name: Check build CLI
         run: python build.py --help
       - name: Check version consistency
@@ -37,6 +39,8 @@ jobs:
           update = json.loads(Path("zygisk/update.json").read_text())
           assert f"version={version}" in prop
           assert update["version"] == version
-          assert update["versionCode"] == int(version.replace(".", "")) + 900
+          parts = [int(p) for p in version.split(".")]
+          assert len(parts) == 3
+          assert update["versionCode"] == parts[0] * 1000 + parts[1] * 100 + parts[2]
           print("version metadata consistent:", version)
           PY
